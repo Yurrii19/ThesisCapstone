@@ -121,6 +121,7 @@ const otpVerified = ref(false)
 const otpCode = ref('')
 const emailForOtp = ref('')
 const contactForOtp = ref('')
+const emailAvailabilityVerifiedFor = ref('')
 const availableIdentityEmail = ref('')
 const availableIdentityContact = ref('')
 const sendingOtp = ref(false)
@@ -641,42 +642,45 @@ const inlineInputClass = (field) => (
 )
 const IDENTITY_STEP = 2
 const INVALID_EMAIL_MESSAGE = 'Please enter a valid email address.'
-const DUPLICATE_EMAIL_MESSAGE = 'This email is already taken.'
+const DUPLICATE_EMAIL_MESSAGE = 'This email is already registered.'
 const LEGACY_DUPLICATE_EMAIL_MESSAGE = 'This email is already registered.'
 const DUPLICATE_CONTACT_MESSAGE = 'Existing contact number detected. This mobile number is already registered.'
 const EMAIL_AVAILABLE_MESSAGE = 'This email is available.'
-const RESERVED_EMAIL_DOMAINS = new Set(['localhost'])
-const RESERVED_EMAIL_TLDS = new Set(['example', 'invalid', 'local', 'localhost', 'test'])
 const normalizeEmailInput = (value) => String(value || '')
   .normalize('NFKC')
   .replace(/[\u200B-\u200D\uFEFF]/g, '')
   .replace(/\s+/g, '')
   .trim()
   .toLowerCase()
-const getEmailDomain = (value) => normalizeEmailInput(value).split('@')[1] || ''
-const hasPublicEmailDomain = (value) => {
-  const domain = getEmailDomain(value)
-  if (!domain || domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
-    return false
-  }
-  if (RESERVED_EMAIL_DOMAINS.has(domain)) {
-    return false
-  }
-
-  const labels = domain.split('.').filter(Boolean)
-  if (labels.length < 2) {
-    return false
-  }
-
-  const tld = labels[labels.length - 1]
-  return tld.length >= 2 && !RESERVED_EMAIL_TLDS.has(tld)
-}
 const isValidRegistrationEmail = (value) => {
   const normalized = normalizeEmailInput(value)
-  return EMAIL_REGEX.test(normalized) && hasPublicEmailDomain(normalized)
+  return EMAIL_REGEX.test(normalized)
 }
+const getEmailValidationMessage = (value, { required = true } = {}) => {
+  const normalized = normalizeEmailInput(value)
+  if (!normalized) {
+    return required ? 'Email address is required.' : ''
+  }
+  if (normalized.length > MAX_EMAIL_LENGTH) {
+    return `Email address must not be greater than ${MAX_EMAIL_LENGTH} characters.`
+  }
+  if (!isValidRegistrationEmail(normalized)) {
+    return INVALID_EMAIL_MESSAGE
+  }
+  return ''
+}
+const isDuplicateEmailAvailabilityMessage = (value) => /email.+(taken|exists|already|registered|in use)/i.test(String(value || ''))
 const getNormalizedFormEmail = () => normalizeEmailInput(form.email)
 const getNormalizedFormContact = () => String(form.contact_number || '').trim()
+const isCurrentEmailAvailabilityVerified = computed(() => {
+  const currentEmail = getNormalizedFormEmail()
+  return Boolean(currentEmail) && currentEmail === emailAvailabilityVerifiedFor.value
+})
+const isStepTwoEmailReady = computed(() => {
+  if (step.value !== IDENTITY_STEP) return true
+  if (otpVerified.value && isCurrentOtpIdentityVerified()) return true
+  return !getEmailValidationMessage(form.email) && isCurrentEmailAvailabilityVerified.value
+})
 const clearVerifiedIdentityAvailability = () => {
   availableIdentityEmail.value = ''
   availableIdentityContact.value = ''
@@ -788,24 +792,11 @@ const checkEmailAvailability = async () => {
   if (String(form.email || '') !== email) {
     form.email = email
   }
-  if (!email) {
-    form.setError('email', 'Email address is required.')
-    Swal.fire('Oops', 'Please enter email first', 'warning')
+  const localValidationMessage = getEmailValidationMessage(email)
+  if (localValidationMessage) {
+    form.setError('email', localValidationMessage)
     emailIsAvailable.value = false
-    return false
-  }
-
-  if (email.length > MAX_EMAIL_LENGTH) {
-    const tooLongMessage = `Email address must not be greater than ${MAX_EMAIL_LENGTH} characters.`
-    form.setError('email', tooLongMessage)
-    Swal.fire('Email Too Long', tooLongMessage, 'error')
-    emailIsAvailable.value = false
-    return false
-  }
-
-  if (!isValidRegistrationEmail(email)) {
-    form.setError('email', INVALID_EMAIL_MESSAGE)
-    emailIsAvailable.value = false
+    emailAvailabilityVerifiedFor.value = ''
     return false
   }
 
@@ -815,25 +806,26 @@ const checkEmailAvailability = async () => {
       const message = DUPLICATE_EMAIL_MESSAGE
       form.setError('email', String(message))
       setOtpStatus('error', String(message))
-      Swal.fire('Existing Email', String(message), 'error')
       emailIsAvailable.value = false
+      emailAvailabilityVerifiedFor.value = ''
       return false
     }
     form.clearErrors('email')
     setOtpStatus('idle', '')
     emailIsAvailable.value = true
+    emailAvailabilityVerifiedFor.value = email
     return true
   } catch (err) {
     const unavailableMessage = err?.response?.data?.message
     const emailErr = err?.response?.data?.errors?.email?.[0]
-    const msg = unavailableMessage || emailErr || (err instanceof Error ? err.message : 'Unable to validate email right now.')
+    const rawMessage = unavailableMessage || emailErr || (err instanceof Error ? err.message : 'Unable to validate email right now.')
+    const msg = isDuplicateEmailAvailabilityMessage(rawMessage)
+      ? DUPLICATE_EMAIL_MESSAGE
+      : String(rawMessage)
     form.setError('email', String(msg))
     setOtpStatus('error', String(msg))
-    const title = /unable to verify email availability/i.test(String(msg))
-      ? 'Email Verification Unavailable'
-      : 'Email Check Failed'
-    Swal.fire(title, String(msg), 'error')
     emailIsAvailable.value = false
+    emailAvailabilityVerifiedFor.value = ''
     return false
   }
 }
@@ -926,24 +918,15 @@ const sendOtp = async () => {
   if (String(form.email || '') !== normalizedEmail) {
     form.email = normalizedEmail
   }
-  if(!form.email){
-    form.setError('email', 'Email address is required.')
-    Swal.fire('Oops','Please enter email first','warning')
+  const emailValidationMessage = getEmailValidationMessage(normalizedEmail)
+  if (emailValidationMessage) {
+    form.setError('email', emailValidationMessage)
+    emailAvailabilityVerifiedFor.value = ''
     return false
   }
   if(!form.contact_number){
     form.setError('contact_number', 'Contact number is required.')
     Swal.fire('Oops','Please enter contact number','warning')
-    return false
-  }
-  if (!isValidRegistrationEmail(normalizedEmail)) {
-    form.setError('email', INVALID_EMAIL_MESSAGE)
-    Swal.fire('Invalid Email', INVALID_EMAIL_MESSAGE, 'warning')
-    return false
-  }
-  if (normalizedEmail.length > MAX_EMAIL_LENGTH) {
-    form.setError('email', `Email address must not be greater than ${MAX_EMAIL_LENGTH} characters.`)
-    Swal.fire('Email Too Long', `Email address must not be greater than ${MAX_EMAIL_LENGTH} characters.`, 'error')
     return false
   }
 
@@ -989,10 +972,9 @@ const sendOtp = async () => {
       const duplicateEmailMessage = msg || emailErr || DUPLICATE_EMAIL_MESSAGE
       form.setError('email', duplicateEmailMessage)
       setOtpStatus('error', duplicateEmailMessage)
-      showOtpStatusToast('error', duplicateEmailMessage, 3200)
-      Swal.fire('Existing Email', duplicateEmailMessage, 'error')
       otpModal.value = false
       otpSent.value = false
+      emailAvailabilityVerifiedFor.value = ''
       return false
     }
 
@@ -1021,10 +1003,9 @@ const sendOtp = async () => {
       const invalidEmailMessage = emailErr || INVALID_EMAIL_MESSAGE
       form.setError('email', invalidEmailMessage)
       setOtpStatus('error', invalidEmailMessage)
-      showOtpStatusToast('error', invalidEmailMessage, 3200)
-      Swal.fire('Invalid Email', invalidEmailMessage, 'error')
       otpModal.value = false
       otpSent.value = false
+      emailAvailabilityVerifiedFor.value = ''
       return false
     }
 
@@ -1158,7 +1139,13 @@ const validateEmailAvailabilityOnBlur = async () => {
   if (String(form.email || '') !== email) {
     form.email = email
   }
-  if (!email || email.length > MAX_EMAIL_LENGTH || !isValidRegistrationEmail(email)) return
+  const validationMessage = getEmailValidationMessage(email)
+  if (validationMessage) {
+    form.setError('email', validationMessage)
+    emailIsAvailable.value = false
+    emailAvailabilityVerifiedFor.value = ''
+    return
+  }
   await checkEmailAvailability()
 }
 const validateContactAvailabilityOnBlur = async () => {
@@ -1274,10 +1261,11 @@ const validateStep = (s) => {
 
     if (!normalizedEmail) {
       errors.email = 'Email address is required.'
-    } else if (normalizedEmail.length > MAX_EMAIL_LENGTH) {
-      errors.email = `Email address must not be greater than ${MAX_EMAIL_LENGTH} characters.`
-    } else if (!isValidRegistrationEmail(normalizedEmail)) {
-      errors.email = INVALID_EMAIL_MESSAGE
+    } else {
+      const emailValidationMessage = getEmailValidationMessage(normalizedEmail)
+      if (emailValidationMessage) {
+        errors.email = emailValidationMessage
+      }
     }
 
     if (!hasText(contactLocal.value)) {
@@ -1528,6 +1516,10 @@ watch(
   [() => form.email, () => form.contact_number],
   ([nextEmail, nextContact]) => {
     form.clearErrors('email', 'contact_number')
+    if (normalizeEmailInput(nextEmail) !== emailAvailabilityVerifiedFor.value) {
+      emailAvailabilityVerifiedFor.value = ''
+      emailIsAvailable.value = false
+    }
     clearVerifiedIdentityAvailability()
     if (!otpSent.value && !otpVerified.value) return
     const emailChanged =
@@ -2368,7 +2360,7 @@ onBeforeUnmount(()=>{
                 v-if="step<totalSteps"
                 type="button"
                 @click="nextStep"
-                :disabled="nextProcessing"
+                :disabled="nextProcessing || !isStepTwoEmailReady"
                 :aria-busy="nextProcessing"
                 class="rounded-full bg-[#0D1B2A] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(13,27,42,0.22)] transition-transform duration-150 hover:-translate-y-[1px] hover:bg-[#11263b] disabled:cursor-not-allowed disabled:opacity-60"
               >

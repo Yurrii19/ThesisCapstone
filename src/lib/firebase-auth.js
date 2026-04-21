@@ -53,8 +53,6 @@ const nowIso = () => new Date().toISOString()
 const DEV_ADMIN_EMAIL = 'admin@thesis.local'
 const DEV_ADMIN_EMAIL_ALIASES = new Set([DEV_ADMIN_EMAIL, 'admin@thesis.com'])
 const EMAIL_ADDRESS_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i
-const RESERVED_EMAIL_DOMAINS = new Set(['localhost'])
-const RESERVED_EMAIL_TLDS = new Set(['example', 'invalid', 'local', 'localhost', 'test'])
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/
 const DEV_ADMIN_PROFILE = {
   first_name: 'Admin',
@@ -76,27 +74,9 @@ const normalizeEmail = (value) => String(value ?? '')
   .replace(/\s+/g, '')
   .trim()
   .toLowerCase()
-const getEmailDomain = (value) => normalizeEmail(value).split('@')[1] || ''
-const hasPublicEmailDomain = (value) => {
-  const domain = getEmailDomain(value)
-  if (!domain || domain.startsWith('.') || domain.endsWith('.') || domain.includes('..')) {
-    return false
-  }
-  if (RESERVED_EMAIL_DOMAINS.has(domain)) {
-    return false
-  }
-
-  const labels = domain.split('.').filter(Boolean)
-  if (labels.length < 2) {
-    return false
-  }
-
-  const tld = labels[labels.length - 1]
-  return tld.length >= 2 && !RESERVED_EMAIL_TLDS.has(tld)
-}
 const isValidEmailAddress = (value) => {
   const normalized = normalizeEmail(value)
-  return EMAIL_ADDRESS_REGEX.test(normalized) && hasPublicEmailDomain(normalized)
+  return EMAIL_ADDRESS_REGEX.test(normalized)
 }
 const STORAGE_SAFE_URL_MAX_LENGTH = 2048
 const isPlainObject = (value) => Object.prototype.toString.call(value) === '[object Object]'
