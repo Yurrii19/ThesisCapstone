@@ -13,6 +13,7 @@
           v-for="item in items"
           :key="item.key"
           :href="item.href"
+          prefetch
           class="flex items-center gap-2.5 rounded-xl border px-3 py-[11px] text-left text-[13px] font-semibold transition-all"
           :class="active === item.key
             ? 'border-teal-500 bg-teal-500 text-white shadow-[0_6px_16px_rgba(20,184,166,0.28)]'

@@ -24,7 +24,7 @@
           </div>
 
           <div class="space-y-6 bg-slate-50 p-5 sm:p-6">
-            <div v-if="loadingUser" class="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
+            <div v-if="loadingUser && !hasUserDetails" class="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center">
               <p class="text-base font-semibold text-slate-700">Loading user details...</p>
               <p class="mt-2 text-sm text-slate-500">Please wait while we fetch the registration record.</p>
             </div>
@@ -628,6 +628,10 @@ const serviceProviderRecord = computed(() => {
   const candidate = user.value?.service_provider || null
   return candidate && typeof candidate === 'object' && Object.keys(candidate).length ? candidate : null
 })
+const hasUserDetails = computed(() => (
+  Boolean(user.value?.id || user.value?.uid || user.value?.firebase_uid || user.value?.email)
+  || Object.keys(user.value || {}).length > 0
+))
 
 const profilePhoto = computed(() => {
   const value = user.value?.profile_photo || user.value?.profile_photo_path || ''
@@ -1044,20 +1048,38 @@ const subscribeLiveUser = (profileId, fallbackUser = null) => {
 
 function openUserModal(userId, initialUser = null) {
   unsubscribeLiveUser()
-  user.value = {}
-  loadingUser.value = true
+  failedImageKeys.value = new Set()
+  previewState.value = {
+    open: false,
+    src: '',
+    label: '',
+  }
+  previewZoom.value = 1
   actingOnUser.value = false
   showModal.value = true
   const fallbackUser = initialUser && typeof initialUser === 'object'
-    ? { ...initialUser }
+    ? mergeUserPayload({ ...initialUser })
     : null
+  const resolvedProfileId = String(
+    userId
+    || fallbackUser?.id
+    || fallbackUser?.uid
+    || fallbackUser?.firebase_uid
+    || fallbackUser?.email
+    || ''
+  ).trim()
 
   if (fallbackUser) {
     user.value = fallbackUser
     subscribeLiveUser(fallbackUser.uid || fallbackUser.id, fallbackUser)
+    loadingUser.value = false
+    return
   }
 
-  axios.get(`/admin/users/${userId}`)
+  user.value = {}
+  loadingUser.value = true
+
+  axios.get(`/admin/users/${resolvedProfileId}`)
     .then(res => {
       const payload = res.data?.user || res.data?.data || res.data || {}
       const resolvedId = payload.id || payload.uid || payload.firebase_uid || payload.email || fallbackUser?.id || fallbackUser?.uid || fallbackUser?.firebase_uid || fallbackUser?.email
@@ -1088,6 +1110,8 @@ const closeModal = () => {
   user.value = {}
   loadingUser.value = false
   actingOnUser.value = false
+  failedImageKeys.value = new Set()
+  closeImagePreview()
 }
 
 const userFullName = computed(() => {

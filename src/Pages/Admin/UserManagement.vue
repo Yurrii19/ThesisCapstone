@@ -1196,11 +1196,10 @@ export default {
 
       this.$refs.viewUserModal.openUserModal(resolvedId, selectedUser)
 
-      if (selectedUser) {
+      if (selectedUser && !selectedUser.has_viewed) {
         selectedUser.has_viewed = true
+        axios.post(`/admin/users/${resolvedId}/mark-viewed`, {}, { skipGlobalLoading: true }).catch(() => {})
       }
-
-      axios.post(`/admin/users/${resolvedId}/mark-viewed`).catch(() => {})
     },
 
     handleApproved(payload){

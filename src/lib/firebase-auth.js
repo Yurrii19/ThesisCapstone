@@ -23,6 +23,7 @@ const AUTH_PROFILE_STORAGE_KEY = 'thesis_capstone_auth_profile'
 const PROFILE_CACHE_STORAGE_KEY = 'thesis_capstone_profile_cache'
 const REGISTRATION_OTP_PREFIX = 'thesis_capstone_registration_otp'
 const REGISTRATION_REDIRECT_SUPPRESSION_KEY = 'thesis_capstone_registration_redirect_suppressed'
+const LOGIN_REDIRECT_SUPPRESSION_KEY = 'thesis_capstone_login_redirect_suppressed'
 const APP_ROOT = 'app_data'
 
 const PUBLIC_ROLE_DASHBOARD = {
@@ -36,6 +37,7 @@ const PUBLIC_ROLE_DASHBOARD = {
   finance: '/Finance/FinanceDashboard',
   procurement: '/Procurement/ProcurementDashboard',
   operational: '/Operational/OperationalDashboard',
+  operational_management: '/Operational/OperationalDashboard',
   csr: '/CSR/Dashboard',
 }
 
@@ -66,8 +68,12 @@ const DEV_ADMIN_PROFILE = {
 }
 
 const trimString = (value) => String(value ?? '').trim()
-const normalizeRole = (role) => trimString(role).toLowerCase().replace(/\s+/g, '_')
+const normalizeRole = (role) => trimString(role)
+  .toLowerCase()
+  .replace(/[\s-]+/g, '_')
+  .replace(/_+/g, '_')
 const encodeKey = (value) => trimString(value).toLowerCase().replace(/[.#$/\[\]]/g, '_')
+const LOCAL_DEV_HOSTS = new Set(['127.0.0.1', 'localhost'])
 const normalizeEmail = (value) => String(value ?? '')
   .normalize('NFKC')
   .replace(/[\u200B-\u200D\uFEFF]/g, '')
@@ -77,6 +83,11 @@ const normalizeEmail = (value) => String(value ?? '')
 const isValidEmailAddress = (value) => {
   const normalized = normalizeEmail(value)
   return EMAIL_ADDRESS_REGEX.test(normalized)
+}
+const isLocalBrowserDevelopment = () => {
+  if (typeof window === 'undefined') return false
+  if (!import.meta.env.DEV) return false
+  return LOCAL_DEV_HOSTS.has(String(window.location.hostname || '').toLowerCase())
 }
 const STORAGE_SAFE_URL_MAX_LENGTH = 2048
 const isPlainObject = (value) => Object.prototype.toString.call(value) === '[object Object]'
@@ -376,10 +387,32 @@ export const getFriendlyFirebaseErrorMessage = (
   if (code.includes('operation-not-allowed')) {
     return 'Email/password registration is not enabled in Firebase Auth.'
   }
-  if (code.includes('network-request-failed') || code.includes('unavailable') || message.includes('network request failed') || message.includes('network error')) {
-    return context === 'otp'
-      ? 'The OTP service is unreachable right now. Check your internet connection and try again.'
-      : 'Firebase is unreachable right now. Check your internet connection and try again.'
+  if (
+    code.includes('network-request-failed')
+    || message.includes('network request failed')
+    || message.includes('network error')
+    || message.includes('failed to fetch')
+    || message.includes('load failed')
+    || message.includes('access-control-allow-origin')
+    || message.includes('cors')
+    || message.includes('preflight')
+  ) {
+    if (context === 'otp') {
+      return 'The OTP service could not be reached. If you are testing on localhost, restart Vite so the Firebase proxy is active, then try again.'
+    }
+    if (context === 'login') {
+      return 'The login service could not be reached. Check your Firebase config and internet connection, then try again.'
+    }
+    return 'The registration service could not be reached. If you are testing on localhost, restart Vite so the Firebase proxy is active, then try again.'
+  }
+  if (code.includes('unavailable')) {
+    if (context === 'otp') {
+      return 'The OTP service is unreachable right now. Check your internet connection and try again.'
+    }
+    if (context === 'login') {
+      return 'Firebase login is unreachable right now. Check your internet connection and try again.'
+    }
+    return 'Firebase is unreachable right now. Check your internet connection and try again.'
   }
   if (code.includes('too-many-requests') || message.includes('too many requests')) {
     return 'Too many attempts were made. Please wait a moment and try again.'
@@ -393,9 +426,13 @@ export const getFriendlyFirebaseErrorMessage = (
       : fallback
   }
   if (isGenericFirebaseErrorText(rawMessage) || code.includes('internal')) {
-    return context === 'otp'
-      ? 'We could not send your OTP right now. Please try again in a moment.'
-      : 'We could not complete your registration right now. Please try again in a moment.'
+    if (context === 'otp') {
+      return 'We could not send your OTP right now. Please try again in a moment.'
+    }
+    if (context === 'login') {
+      return 'We could not complete your login right now. Please try again in a moment.'
+    }
+    return 'We could not complete your registration right now. Please try again in a moment.'
   }
   return rawMessage || fallback
 }
@@ -437,30 +474,74 @@ const getAvailabilityCallable = () => {
 
 const FIREBASE_CONFIGURATION_HELP = 'Firebase is not configured. Add your Firebase web config to public/runtime-config.js or define the Vite Firebase variables before building.'
 const FIREBASE_FUNCTIONS_REGION = trimString(firebaseFunctionsRegion || 'us-central1') || 'us-central1'
+const buildFunctionsHttpUrl = (endpoint) => {
+  if (isLocalBrowserDevelopment()) {
+    return `/__firebase_functions/${endpoint}`
+  }
+
+  const projectId = trimString(firebaseConfig?.projectId)
+  if (!projectId) {
+    throw new Error(`Firebase function "${endpoint}" is not configured. Firebase project ID is unavailable.`)
+  }
+
+  return `https://${FIREBASE_FUNCTIONS_REGION}-${projectId}.cloudfunctions.net/${endpoint}`
+}
+const wrapFunctionTransportError = (error, fallbackMessage) => {
+  const normalizedMessage = trimString(error?.message || fallbackMessage) || fallbackMessage
+  const combinedText = `${String(error?.code || '')} ${normalizedMessage}`.toLowerCase()
+  const wrappedError = new Error(normalizedMessage)
+  wrappedError.cause = error
+  wrappedError.code = (
+    combinedText.includes('cors')
+    || combinedText.includes('failed to fetch')
+    || combinedText.includes('networkerror')
+    || combinedText.includes('load failed')
+    || combinedText.includes('access-control-allow-origin')
+    || combinedText.includes('preflight')
+  )
+    ? 'network-request-failed'
+    : String(error?.code || 'network-request-failed')
+  return wrappedError
+}
+const shouldRetryFunctionTransport = (error) => {
+  const code = String(error?.code || '').toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    code.includes('permission')
+    || code.includes('internal')
+    || code.includes('unavailable')
+    || code.includes('not-found')
+    || code.includes('network-request-failed')
+    || code.startsWith('http/5')
+    || message.includes('failed to fetch')
+    || message.includes('network error')
+    || message.includes('load failed')
+    || message.includes('access-control-allow-origin')
+    || message.includes('cors')
+    || message.includes('preflight')
+  )
+}
 
 const getOtpHttpUrl = () => {
-  const projectId = trimString(firebaseConfig?.projectId)
-  if (!projectId) {
-    throw new Error('OTP service is not configured. Firebase project ID is unavailable.')
-  }
-  return `https://${FIREBASE_FUNCTIONS_REGION}-${projectId}.cloudfunctions.net/sendRegistrationOtpHttp`
+  return buildFunctionsHttpUrl('sendRegistrationOtpHttp')
 }
 const getAvailabilityHttpUrl = () => {
-  const projectId = trimString(firebaseConfig?.projectId)
-  if (!projectId) {
-    throw new Error('Registration availability service is not configured. Firebase project ID is unavailable.')
-  }
-  return `https://${FIREBASE_FUNCTIONS_REGION}-${projectId}.cloudfunctions.net/checkRegistrationAvailabilityHttp`
+  return buildFunctionsHttpUrl('checkRegistrationAvailabilityHttp')
 }
 
 const sendRegistrationOtpViaHttp = async (payload) => {
-  const response = await fetch(getOtpHttpUrl(), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=UTF-8',
-    },
-    body: JSON.stringify(payload),
-  })
+  let response
+  try {
+    response = await fetch(getOtpHttpUrl(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=UTF-8',
+      },
+      body: JSON.stringify(payload),
+    })
+  } catch (error) {
+    throw wrapFunctionTransportError(error, 'Unable to reach the OTP service.')
+  }
 
   const data = await response.json().catch(() => null)
 
@@ -482,9 +563,14 @@ const probeRegistrationAvailabilityViaHttp = async ({ email = '', contactNumber 
   if (email) params.set('email', email)
   if (contactNumber) params.set('contactNumber', contactNumber)
 
-  const response = await fetch(`${getAvailabilityHttpUrl()}?${params.toString()}`, {
-    method: 'GET',
-  })
+  let response
+  try {
+    response = await fetch(`${getAvailabilityHttpUrl()}?${params.toString()}`, {
+      method: 'GET',
+    })
+  } catch (error) {
+    throw wrapFunctionTransportError(error, 'Unable to reach the registration availability service.')
+  }
 
   const data = await response.json().catch(() => null)
 
@@ -509,18 +595,22 @@ const probeServerRegistrationAvailability = async ({ email = '', contactNumber =
     contactNumber: normalizeContactNumber(contactNumber),
   }
 
+  if (isLocalBrowserDevelopment()) {
+    try {
+      return await probeRegistrationAvailabilityViaHttp(payload)
+    } catch (error) {
+      if (!shouldRetryFunctionTransport(error)) {
+        return null
+      }
+    }
+  }
+
   try {
     const callable = getAvailabilityCallable()
     const result = await callable(payload)
     return result?.data || null
   } catch (error) {
-    const code = String(error?.code || '').toLowerCase()
-    if (
-      code.includes('permission')
-      || code.includes('internal')
-      || code.includes('unavailable')
-      || code.includes('not-found')
-    ) {
+    if (shouldRetryFunctionTransport(error)) {
       try {
         return await probeRegistrationAvailabilityViaHttp(payload)
       } catch {
@@ -972,6 +1062,20 @@ export const isRegistrationRedirectSuppressed = () => {
   return window.sessionStorage.getItem(REGISTRATION_REDIRECT_SUPPRESSION_KEY) === '1'
 }
 
+export const setLoginRedirectSuppressed = (suppressed) => {
+  if (typeof window === 'undefined') return
+  if (suppressed) {
+    window.sessionStorage.setItem(LOGIN_REDIRECT_SUPPRESSION_KEY, '1')
+    return
+  }
+  window.sessionStorage.removeItem(LOGIN_REDIRECT_SUPPRESSION_KEY)
+}
+
+export const isLoginRedirectSuppressed = () => {
+  if (typeof window === 'undefined') return false
+  return window.sessionStorage.getItem(LOGIN_REDIRECT_SUPPRESSION_KEY) === '1'
+}
+
 const mapFirebaseUserToAuthState = (firebaseUser, profile = null) => {
   if (!firebaseUser) return baseAuthState()
 
@@ -1360,17 +1464,20 @@ export const sendRegistrationOtp = async ({ email, role, contactNumber }) => {
     role: normalizeRole(role) || 'user',
     contactNumber: trimString(contactNumber),
   }
+  if (isLocalBrowserDevelopment()) {
+    try {
+      return await sendRegistrationOtpViaHttp(payload)
+    } catch (httpError) {
+      if (!shouldRetryFunctionTransport(httpError)) {
+        throw new Error(getFriendlyFirebaseErrorMessage(httpError, 'Failed to send OTP email.', 'otp'))
+      }
+    }
+  }
   try {
     const result = await callable(payload)
     return result?.data || { sent: true, delivery: 'smtp' }
   } catch (error) {
-    const code = String(error?.code || '').toLowerCase()
-    if (
-      code.includes('permission')
-      || code.includes('internal')
-      || code.includes('unavailable')
-      || code.includes('not-found')
-    ) {
+    if (shouldRetryFunctionTransport(error)) {
       try {
         return await sendRegistrationOtpViaHttp(payload)
       } catch (fallbackError) {
@@ -1648,13 +1755,16 @@ export const loginWithFirebase = async ({ email, password, remember = false }) =
   try {
     credential = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password)
   } catch (error) {
-    throw new Error(
+    const wrappedError = new Error(
       getFriendlyFirebaseErrorMessage(
         error,
         'Login failed. Please check your email and password.',
         'login',
       ),
     )
+    wrappedError.code = String(error?.code || error?.error?.code || error?.details?.code || '')
+    wrappedError.cause = error
+    throw wrappedError
   }
   let profile = await fetchUserProfile(credential.user.uid, credential.user.email || normalizedEmail)
   if (!profile && isDevAdminEmail(normalizedEmail)) {

@@ -73,9 +73,15 @@ import Swal from "@/lib/sweetalert-toast-shim";
 import { confirmAndLogout } from '@/lib/auth-flow'
 import HrSidebarNav from '@/Components/HrSidebarNav.vue'
 import HrTopbar from '@/Components/HrTopbar.vue'
+import {
+  readEmployeeDashboardCache,
+  writeEmployeeDashboardCache,
+} from '@/lib/employee-dashboard-cache'
 
 const activeMenu = ref("Assigned Requests");
-const loading = ref(true);
+const cachedDashboardState = readEmployeeDashboardCache();
+const hasCachedDashboardState = Boolean(cachedDashboardState);
+const loading = ref(!hasCachedDashboardState);
 const profile = ref({
   first_name: "",
   middle_initial: "",
@@ -93,15 +99,28 @@ const navigateTo = (menu, url) => {
   router.visit(url);
 };
 
-const fetchAssignedRequests = async () => {
-  loading.value = true;
+const applyDashboardPayload = (payload = {}) => {
+  profile.value = payload.profile || profile.value;
+  assignedRequests.value = payload.assigned_requests || [];
+  employeeData.value = payload.employee || null;
+};
+
+if (hasCachedDashboardState) {
+  applyDashboardPayload(cachedDashboardState);
+}
+
+const fetchAssignedRequests = async ({ background = hasCachedDashboardState } = {}) => {
+  if (!background) {
+    loading.value = true;
+  }
   try {
     const res = await axios.get("/employee/dashboard-data");
-    profile.value = res.data.profile;
-    assignedRequests.value = res.data.assigned_requests || [];
-    employeeData.value = res.data.employee || null;
+    applyDashboardPayload(res.data || {});
+    writeEmployeeDashboardCache(res.data || {});
   } catch (err) {
-    Swal.fire("Error", "Failed to load assigned requests.", "error");
+    if (!background) {
+      Swal.fire("Error", "Failed to load assigned requests.", "error");
+    }
   } finally {
     loading.value = false;
   }
@@ -186,6 +205,8 @@ const logout = async () => {
   await confirmAndLogout()
 };
 
-onMounted(fetchAssignedRequests);
+onMounted(() => {
+  fetchAssignedRequests({ background: hasCachedDashboardState });
+});
 </script>
 

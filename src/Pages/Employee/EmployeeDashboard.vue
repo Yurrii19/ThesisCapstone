@@ -217,9 +217,15 @@ import {
   employeeSidebarItems,
   employeeSidebarNote,
 } from '@/lib/employee-rbac'
+import {
+  readEmployeeDashboardCache,
+  writeEmployeeDashboardCache,
+} from '@/lib/employee-dashboard-cache'
 
 const activeMenu = ref("Dashboard");
-const loading = ref(true);
+const cachedDashboardState = readEmployeeDashboardCache();
+const hasCachedDashboardState = Boolean(cachedDashboardState);
+const loading = ref(!hasCachedDashboardState);
 const profile = ref({
   first_name: "",
   middle_initial: "",
@@ -373,23 +379,36 @@ const navigateTo = (menu, url) => {
 
 const formatAmount = (value) => Number(value || 0).toFixed(2);
 
-const fetchDashboardData = async () => {
-  loading.value = true;
+const applyDashboardPayload = (payload = {}) => {
+  profile.value = payload.profile || profile.value;
+  employeeData.value = payload.employee || null;
+  dailyEarnings.value = Array.isArray(payload.daily_earnings) ? payload.daily_earnings : [];
+  notifications.value = Array.isArray(payload.notifications) ? payload.notifications : [];
+  assignedRequests.value = Array.isArray(payload.assigned_requests) ? payload.assigned_requests : [];
+  earningsOverview.value = {
+    today_total: Number(payload?.earnings_overview?.today_total || 0),
+    today_compensation_total: Number(payload?.earnings_overview?.today_compensation_total || 0),
+    today_job_count: Number(payload?.earnings_overview?.today_job_count || 0),
+  };
+};
+
+if (hasCachedDashboardState) {
+  applyDashboardPayload(cachedDashboardState);
+}
+
+const fetchDashboardData = async ({ background = hasCachedDashboardState } = {}) => {
+  if (!background) {
+    loading.value = true;
+  }
   try {
     const res = await axios.get("/employee/dashboard-data");
-    profile.value = res.data.profile;
-    employeeData.value = res.data.employee;
-    dailyEarnings.value = Array.isArray(res.data.daily_earnings) ? res.data.daily_earnings : [];
-    notifications.value = Array.isArray(res.data.notifications) ? res.data.notifications : [];
-    assignedRequests.value = Array.isArray(res.data.assigned_requests) ? res.data.assigned_requests : [];
-    earningsOverview.value = {
-      today_total: Number(res.data?.earnings_overview?.today_total || 0),
-      today_compensation_total: Number(res.data?.earnings_overview?.today_compensation_total || 0),
-      today_job_count: Number(res.data?.earnings_overview?.today_job_count || 0),
-    };
+    applyDashboardPayload(res.data || {});
+    writeEmployeeDashboardCache(res.data || {});
     await showSchedulePopupIfNeeded();
   } catch (err) {
-    Swal.fire("Error", "Failed to load dashboard data.", "error");
+    if (!background) {
+      Swal.fire("Error", "Failed to load dashboard data.", "error");
+    }
   } finally {
     loading.value = false;
   }
@@ -592,7 +611,7 @@ const showSchedulePopupIfNeeded = async () => {
 };
 
 onMounted(() => {
-  fetchDashboardData();
+  fetchDashboardData({ background: hasCachedDashboardState });
   currentTimeTick.value = Date.now()
   notificationPoller = setInterval(() => {
     currentTimeTick.value = Date.now()

@@ -313,8 +313,8 @@ const saving = ref(false)
 const receivingOrderId = ref(null)
 const awaitingRequests = ref(Array.isArray(cachedScmState?.awaitingRequests) ? cachedScmState.awaitingRequests : [])
 const stockOrders = ref(Array.isArray(cachedScmState?.stockOrders) ? cachedScmState.stockOrders : [])
-const materialOptions = ref([])
-const inventoryRows = ref([])
+const materialOptions = ref(Array.isArray(cachedScmState?.materialOptions) ? cachedScmState.materialOptions : [])
+const inventoryRows = ref(Array.isArray(cachedScmState?.inventoryRows) ? cachedScmState.inventoryRows : [])
 
 const todayString = () => {
   const now = new Date()
@@ -651,6 +651,12 @@ const fetchMaterialOptions = async () => {
     ])
     materialOptions.value = Array.isArray(templateRes.data) ? templateRes.data : []
     inventoryRows.value = Array.isArray(inventoryRes.data) ? inventoryRes.data : []
+    writeCachedViewState(SCM_CACHE_KEY, {
+      awaitingRequests: awaitingRequests.value,
+      stockOrders: stockOrders.value,
+      materialOptions: materialOptions.value,
+      inventoryRows: inventoryRows.value,
+    })
   } catch {
     materialOptions.value = []
     inventoryRows.value = []
@@ -671,6 +677,8 @@ const fetchData = async ({ background = false } = {}) => {
     writeCachedViewState(SCM_CACHE_KEY, {
       awaitingRequests: awaitingRequests.value,
       stockOrders: stockOrders.value,
+      materialOptions: materialOptions.value,
+      inventoryRows: inventoryRows.value,
     })
   } catch {
     if (!background) {

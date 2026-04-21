@@ -2,6 +2,8 @@ import { ref } from 'vue'
 import axios from 'axios'
 import Swal from '@/lib/sweetalert-toast-shim'
 import { confirmAndLogout } from '@/lib/auth-flow'
+import { OPERATIONAL_DASHBOARD_CACHE_KEY } from '@/lib/dashboard-prefetch'
+import { readCachedViewState, writeCachedViewState } from '@/lib/view-state-cache'
 import {
   WORKFLOW_TRACKER_STEPS,
   requestWorkflowDescription,
@@ -9,9 +11,11 @@ import {
 } from '@/lib/request-workflow'
 
 export function useOperationalData() {
-  const loading = ref(false)
+  const cachedDashboardState = readCachedViewState(OPERATIONAL_DASHBOARD_CACHE_KEY, null)
+  const hasCachedDashboardState = Boolean(cachedDashboardState)
+  const loading = ref(!hasCachedDashboardState)
   const workingRequestId = ref(null)
-  const queue = ref([])
+  const queue = ref(Array.isArray(cachedDashboardState?.queue) ? cachedDashboardState.queue : [])
   const stats = ref({
     total_requests: 0,
     pending_review: 0,
@@ -20,6 +24,7 @@ export function useOperationalData() {
     ongoing: 0,
     completed_today: 0,
     pr_status_summary: {},
+    ...(cachedDashboardState?.stats || {}),
   })
   const prSummary = ref({
     pending: 0,
@@ -29,6 +34,7 @@ export function useOperationalData() {
     in_transit: 0,
     delivered: 0,
     completed: 0,
+    ...((cachedDashboardState?.stats || {}).pr_status_summary || {}),
   })
 
   const flowSteps = WORKFLOW_TRACKER_STEPS.map((step) => ({ ...step }))
@@ -216,27 +222,39 @@ export function useOperationalData() {
     return chips
   }
 
-  const fetchDashboard = async () => {
-    loading.value = true
+  const applyDashboardPayload = (payload = {}) => {
+    stats.value = {
+      ...stats.value,
+      ...(payload.stats || {}),
+    }
+    prSummary.value = {
+      ...prSummary.value,
+      ...((payload.stats || {}).pr_status_summary || {}),
+    }
+    queue.value = Array.isArray(payload.queue)
+      ? payload.queue.map((item) => ({
+          ...item,
+          can_plan_materials: item?.can_plan_materials ?? canPlanMaterialsForItem(item),
+        }))
+      : []
+  }
+
+  const fetchDashboard = async ({ background = hasCachedDashboardState } = {}) => {
+    if (!background) {
+      loading.value = true
+    }
     try {
       const res = await axios.get('/operational/dashboard-data')
       const payload = res?.data || {}
-      stats.value = {
-        ...stats.value,
-        ...(payload.stats || {}),
-      }
-      prSummary.value = {
-        ...prSummary.value,
-        ...((payload.stats || {}).pr_status_summary || {}),
-      }
-      queue.value = Array.isArray(payload.queue)
-        ? payload.queue.map((item) => ({
-            ...item,
-            can_plan_materials: item?.can_plan_materials ?? canPlanMaterialsForItem(item),
-          }))
-        : []
+      applyDashboardPayload(payload)
+      writeCachedViewState(OPERATIONAL_DASHBOARD_CACHE_KEY, {
+        stats: payload.stats || {},
+        queue: queue.value,
+      })
     } catch {
-      Swal.fire('Error', 'Failed to load operational dashboard data.', 'error')
+      if (!background) {
+        Swal.fire('Error', 'Failed to load operational dashboard data.', 'error')
+      }
     } finally {
       loading.value = false
     }

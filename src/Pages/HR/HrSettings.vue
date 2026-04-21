@@ -20,7 +20,7 @@
               class="inline-flex rounded-full border px-3 py-1 text-xs font-semibold shadow-sm"
               :class="canManageRbac ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-slate-100 text-slate-700'"
             >
-              {{ businessContextLoading ? 'Loading workspace...' : canManageRbac ? 'Company account in HR workspace' : 'HR account' }}
+              {{ canManageRbac ? 'Company account in HR workspace' : 'HR account' }}
             </span>
           </div>
           </div>
@@ -28,10 +28,10 @@
           <div class="p-6">
           <div v-if="!canManageRbac" class="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p class="text-sm font-semibold text-slate-900">
-              {{ businessContextLoading ? 'Loading company workspace context...' : 'RBAC checklist is not available for this account.' }}
+              RBAC checklist is not available for this account.
             </p>
             <p class="mt-1 text-xs text-slate-600">
-              {{ businessContextLoading ? 'Checking whether RBAC settings should be enabled for this account.' : 'This setting is only for company-managed workspaces that have employee records under the same business.' }}
+              This setting is only for company-managed workspaces that have employee records under the same business.
             </p>
           </div>
 
@@ -47,10 +47,6 @@
                   Default for new employees: View only (Manage/Approve disabled until enabled here).
                 </p>
               </div>
-            </div>
-
-            <div v-if="businessContextLoading" class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-800">
-              Company workspace context is loading. RBAC remains visible while the workspace details sync.
             </div>
 
             <div v-if="employeeRows.length === 0" class="mt-5 rounded-[20px] border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
@@ -694,7 +690,7 @@ const resolveEmployeeModuleMatrix = (staffPermissions) => {
   }
   return normalizeModuleMatrix(null, moduleDefaultRow)
 }
-const workspaceEmployeeRoles = new Set(['employee', 'hr', 'finance', 'procurement', 'operational', 'csr'])
+const workspaceEmployeeRoles = new Set(['employee', 'hr', 'finance', 'procurement', 'operational', 'operational_management', 'csr'])
 const defaultCreatorRoleStaffMatrix = () => ({
   business_owner: normalizeStaffPermissionRow(null),
   hr_owner: normalizeStaffPermissionRow(null),
@@ -1356,7 +1352,7 @@ const fetchWorkspaceEmployeesForRbac = async () => {
 const fetchBusinessContext = async () => {
   businessContextLoading.value = true
   try {
-    const res = await axios.get('/business/context')
+    const res = await axios.get('/business/context', { skipGlobalLoading: true })
     businessContext.business_type = trimString(
       res.data?.business_type
       || authUser.business_type
@@ -1389,18 +1385,19 @@ const fetchRbacMatrixSettings = async () => {
   if (!canManageRbac.value) return
 
   loadingRbacMatrix.value = true
+  const workspaceEmployeesPromise = fetchWorkspaceEmployeesForRbac()
   try {
-    const res = await axios.get('/business/settings/rbac-matrix')
+    const res = await axios.get('/business/settings/rbac-matrix', { skipGlobalLoading: true })
     applyCreatorRoleStaffMatrix(res.data?.creator_role_staff_matrix || {})
     const liveRows = Array.isArray(res.data?.employee_rows) ? res.data.employee_rows : []
     if (liveRows.length > 0) {
       applyEmployeeRows(liveRows)
     } else {
-      await fetchWorkspaceEmployeesForRbac()
+      await workspaceEmployeesPromise
     }
   } catch (error) {
     const hadRowsBeforeFallback = employeeRows.value.length > 0
-    const recoveredFromFallback = await fetchWorkspaceEmployeesForRbac()
+    const recoveredFromFallback = await workspaceEmployeesPromise
     if (recoveredFromFallback || hadRowsBeforeFallback) {
       return
     }

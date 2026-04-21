@@ -38,8 +38,14 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import axios from 'axios'
 import FinanceShell from './FinanceShell.vue'
+import {
+  buildFinanceDashboardState,
+  FINANCE_DASHBOARD_CACHE_KEY,
+} from '@/lib/dashboard-prefetch'
+import { readCachedViewState, writeCachedViewState } from '@/lib/view-state-cache'
 
 const props = defineProps({
   recentInvoices: {
@@ -52,15 +58,56 @@ const props = defineProps({
   },
 })
 
-const recentInvoices = computed(() => props.recentInvoices)
+const hasProvidedData = computed(() => props.recentInvoices.length > 0 || props.cards.length > 0)
+const cachedDashboardState = readCachedViewState(FINANCE_DASHBOARD_CACHE_KEY, null)
+const recentInvoicesState = ref(
+  hasProvidedData.value
+    ? props.recentInvoices
+    : (Array.isArray(cachedDashboardState?.recentInvoices) ? cachedDashboardState.recentInvoices : []),
+)
+const cardsState = ref(
+  hasProvidedData.value
+    ? props.cards
+    : (Array.isArray(cachedDashboardState?.cards) ? cachedDashboardState.cards : []),
+)
+
+const recentInvoices = computed(() => recentInvoicesState.value)
 const cards = computed(() =>
-  props.cards.map((card) => ({
+  cardsState.value.map((card) => ({
     ...card,
     value: typeof card.value === 'number' && !String(card.label).toLowerCase().includes('invoice')
       ? money(card.value)
       : String(card.value),
   })),
 )
+
+const fetchFinanceDashboard = async () => {
+  try {
+    const [invoicesRes, payoutsRes, refundsRes] = await Promise.all([
+      axios.get('/finance/invoices', { skipGlobalLoading: true }).catch(() => ({ data: [] })),
+      axios.get('/finance/payouts', { skipGlobalLoading: true }).catch(() => ({ data: [] })),
+      axios.get('/finance/refunds', { skipGlobalLoading: true }).catch(() => ({ data: [] })),
+    ])
+
+    const payload = buildFinanceDashboardState({
+      invoices: invoicesRes?.data,
+      payouts: payoutsRes?.data,
+      refunds: refundsRes?.data,
+    })
+
+    recentInvoicesState.value = payload.recentInvoices
+    cardsState.value = payload.cards
+    writeCachedViewState(FINANCE_DASHBOARD_CACHE_KEY, payload)
+  } catch {
+    // Leave cached or server-provided values in place.
+  }
+}
+
+onMounted(() => {
+  if (!hasProvidedData.value) {
+    fetchFinanceDashboard().catch(() => {})
+  }
+})
 
 function money(value) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value || 0)

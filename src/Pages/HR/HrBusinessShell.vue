@@ -767,6 +767,33 @@ const userAccountPasswordError = computed(() => {
     : 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.'
 })
 
+const ACCOUNT_EMAIL_PROBE_MAX_AGE_MS = 2 * 60 * 1000
+const accountEmailProbeCache = new Map()
+
+const readAccountEmailProbe = (email) => {
+  const key = normalizeEmailCandidate(email)
+  if (!key) return null
+
+  const cached = accountEmailProbeCache.get(key)
+  if (!cached) return null
+  if (Date.now() - cached.savedAt > ACCOUNT_EMAIL_PROBE_MAX_AGE_MS) {
+    accountEmailProbeCache.delete(key)
+    return null
+  }
+
+  return cached
+}
+
+const writeAccountEmailProbe = (email, result) => {
+  const key = normalizeEmailCandidate(email)
+  if (!key) return
+
+  accountEmailProbeCache.set(key, {
+    savedAt: Date.now(),
+    ...result,
+  })
+}
+
 const openCreateUserModal = () => {
   showCreateUserModal.value = true
 }
@@ -803,7 +830,7 @@ watch(
     }
     userAccountEmailTimer = window.setTimeout(() => {
       verifyAccountEmail({ silent: true })
-    }, 180)
+    }, 120)
   }
 )
 
@@ -1233,23 +1260,39 @@ const verifyAccountEmail = async ({ silent = false } = {}) => {
     return
   }
 
+  const cachedProbe = readAccountEmailProbe(normalizedEmail)
+  if (cachedProbe) {
+    accountEmailStatus.value = cachedProbe.status
+    accountEmailMessage.value = cachedProbe.message
+    accountEmailChecked.value = cachedProbe.status === 'success'
+    return
+  }
+
   checkingAccountEmail.value = true
   accountEmailStatus.value = 'checking'
   accountEmailMessage.value = 'Checking if this email already exists...'
 
   try {
-    const res = await axios.post('/check-email', { email: normalizedEmail }, { skipGlobalLoading: true })
+    const res = await axios.post('/check-email', { email: normalizedEmail }, { skipGlobalLoading: true, timeout: 2500 })
     const exists = Boolean(res?.data?.exists)
     if (exists) {
       accountEmailStatus.value = 'error'
       accountEmailMessage.value = 'This email is already registered.'
       accountEmailChecked.value = false
+      writeAccountEmailProbe(normalizedEmail, {
+        status: 'error',
+        message: 'This email is already registered.',
+      })
       if (!silent) Swal.fire('Email Taken', 'This email is already registered.', 'error')
       return
     }
     accountEmailStatus.value = 'success'
     accountEmailMessage.value = 'Email is available.'
     accountEmailChecked.value = true
+    writeAccountEmailProbe(normalizedEmail, {
+      status: 'success',
+      message: 'Email is available.',
+    })
   } catch (error) {
     const message = error?.response?.data?.message || 'Unable to verify email right now.'
     accountEmailStatus.value = 'error'

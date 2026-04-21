@@ -8,8 +8,13 @@ import { useRouter } from 'vue-router'
 import { createToastInterface, POSITION } from 'vue-toastification'
 import {
   loginWithFirebase,
+  setLoginRedirectSuppressed,
   sendPasswordResetWithFirebase,
 } from '@/lib/firebase-auth'
+import {
+  prefetchWorkspaceRoutes,
+  warmRoleDashboardData,
+} from '@/lib/dashboard-prefetch'
 
 const props = defineProps({
   canResetPassword: Boolean,
@@ -44,7 +49,6 @@ const forgotShowConfirmPassword = ref(false)
 const submitState = ref('idle')
 const submitStatusText = ref('')
 const isPageLoading = ref(false)
-const pageLoadingText = ref('')
 const lockSeconds = ref(0)
 const lampPullOffset = ref(0)
 const lampPullAnchorY = ref(0)
@@ -57,11 +61,17 @@ let lockTimer = null
 let submitSlowTimer = null
 let submitLongTimer = null
 const router = useRouter()
+const waitForDashboardWarmup = (profile) => Promise.race([
+  warmRoleDashboardData(profile),
+  new Promise((resolve) => {
+    window.setTimeout(resolve, 750)
+  }),
+])
 
 const goToRoute = (path) => {
   const target = String(path || '/')
-  return router.push(target).catch(() => {
-    window.location.assign(target)
+  return router.replace(target).catch(() => {
+    window.location.replace(target)
   })
 }
 
@@ -84,17 +94,7 @@ const submitLabel = computed(() => {
   if (form.processing) return 'SIGNING IN...'
   return 'LOG IN'
 })
-const hasStatusNotice = computed(() => submitState.value !== 'idle' && submitStatusText.value.trim().length > 0)
-const showBlockingOverlay = computed(() => isSubmitting.value || isSubmitSuccess.value || isPageLoading.value)
-const overlayTitle = computed(() => {
-  if (isPageLoading.value) return 'Opening Page'
-  return isSubmitSuccess.value ? 'Login Successful' : 'Processing Login'
-})
-const overlayText = computed(() => (
-  isPageLoading.value
-    ? pageLoadingText.value
-    : submitStatusText.value
-))
+const hasStatusNotice = computed(() => submitState.value === 'error' && submitStatusText.value.trim().length > 0)
 const forgotHasStatus = computed(() => forgotStatusState.value !== 'idle' && forgotStatusText.value.trim().length > 0)
 const forgotStepTitle = computed(() => {
   if (forgotStep.value === 1) return 'Verify your account'
@@ -133,14 +133,8 @@ const forgotCanSubmit = computed(() => {
     forgotForm.password_confirmation.length > 0
   )
 })
-const isSubmitting = computed(() => submitState.value === 'submitting')
-const isSubmitSuccess = computed(() => submitState.value === 'success')
 const isFirebaseError = computed(() => /firebase|google|token|unreachable/i.test(localGeneralError.value || ''))
 const statusNoticeClass = computed(() => {
-  if (submitState.value === 'success') {
-    return 'border-[rgba(74,222,128,0.42)] bg-[rgba(34,197,94,0.14)] text-[#86efac]'
-  }
-
   if (submitState.value === 'error') {
     return 'border-[rgba(248,113,113,0.5)] bg-[rgba(127,29,29,0.25)] text-[#fecaca]'
   }
@@ -170,10 +164,69 @@ if (typeof window !== 'undefined' && !window.__appFeedbackToast) {
   window.__appFeedbackToast = toast
 }
 
+const AUTH_PROGRESS_TOAST_ID = 'auth-login-progress'
+
 const showAuthToast = (type, message, timeout = 2400) => {
   const handler = toast?.[type]
   if (typeof handler !== 'function' || !message) return
   handler(message, { timeout })
+}
+
+const dismissAuthProgressToast = () => {
+  if (typeof toast?.dismiss === 'function') {
+    toast.dismiss(AUTH_PROGRESS_TOAST_ID)
+  }
+}
+
+const upsertAuthProgressToast = (type, message, options = {}) => {
+  if (!message) return
+
+  const nextOptions = {
+    id: AUTH_PROGRESS_TOAST_ID,
+    closeButton: false,
+    closeOnClick: false,
+    draggable: false,
+    pauseOnHover: false,
+    pauseOnFocusLoss: false,
+    ...options,
+  }
+
+  if (typeof toast?.update === 'function') {
+    toast.update(
+      AUTH_PROGRESS_TOAST_ID,
+      {
+        content: message,
+        options: {
+          ...nextOptions,
+          type,
+        },
+      },
+      true,
+    )
+    return
+  }
+
+  dismissAuthProgressToast()
+
+  const handler = toast?.[type]
+  if (typeof handler === 'function') {
+    handler(message, nextOptions)
+  }
+}
+
+const showSubmittingToast = (message) => {
+  upsertAuthProgressToast('info', message, {
+    timeout: false,
+    hideProgressBar: true,
+    icon: false,
+  })
+}
+
+const showRedirectingToast = (message, timeout = 1200) => {
+  upsertAuthProgressToast('success', message, {
+    timeout,
+    hideProgressBar: false,
+  })
 }
 
 const setForgotStatus = (state, text) => {
@@ -253,11 +306,13 @@ const startSubmitTimers = () => {
   submitSlowTimer = window.setTimeout(() => {
     if (!form.processing || submitState.value !== 'submitting') return
     submitStatusText.value = 'Still checking your account. Please wait a moment...'
+    showSubmittingToast(submitStatusText.value)
   }, 2500)
 
   submitLongTimer = window.setTimeout(() => {
     if (!form.processing || submitState.value !== 'submitting') return
     submitStatusText.value = 'Still contacting the server. You will see the real result as soon as it responds...'
+    showSubmittingToast(submitStatusText.value)
   }, 8000)
 }
 
@@ -323,10 +378,14 @@ const navigateWithLoading = (path, label, { reveal = false } = {}) => {
     markLampReveal()
   }
   isPageLoading.value = true
-  pageLoadingText.value = label
-  window.setTimeout(() => {
-    void goToRoute(path)
-  }, 180)
+  showAuthToast('info', label, 900)
+  window.setTimeout(async () => {
+    try {
+      await goToRoute(path)
+    } finally {
+      isPageLoading.value = false
+    }
+  }, 120)
 }
 
 const goToHome = () => navigateWithLoading('/', 'Returning to landing page...')
@@ -447,6 +506,8 @@ const submitLogin = async () => {
   submitState.value = 'submitting'
   submitStatusText.value = 'Checking your account...'
   form.clearErrors()
+  setLoginRedirectSuppressed(true)
+  showSubmittingToast(submitStatusText.value)
   startSubmitTimers()
 
   try {
@@ -459,16 +520,18 @@ const submitLogin = async () => {
     const redirect = String(response?.redirect || '/Public/Dashboard')
     submitState.value = 'success'
     submitStatusText.value = 'Login successful. Redirecting to your dashboard...'
-    showAuthToast('success', 'Login successful. Redirecting...', 1200)
     form.processing = false
-
-    window.setTimeout(() => {
-      void goToRoute(redirect)
-    }, 250)
+    setLoginRedirectSuppressed(false)
+    prefetchWorkspaceRoutes(response?.profile, router).catch(() => {})
+    await waitForDashboardWarmup(response?.profile).catch(() => {})
+    showRedirectingToast(submitStatusText.value, 1200)
+    await goToRoute(redirect)
   } catch (error) {
     stopSubmitTimers()
     submitState.value = 'error'
     form.processing = false
+    setLoginRedirectSuppressed(false)
+    dismissAuthProgressToast()
 
     const timeoutError = error?.code === 'ECONNABORTED'
       || String(error?.message || '').toLowerCase().includes('timeout')
@@ -557,6 +620,8 @@ watch(() => forgotForm.password_confirmation, () => {
 })
 
 onMounted(() => {
+  setLoginRedirectSuppressed(false)
+  dismissAuthProgressToast()
   showLampReveal.value = consumeLampReveal()
   stopLockTimer()
   stopSubmitTimers()
@@ -568,6 +633,12 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (submitState.value === 'submitting') {
+    dismissAuthProgressToast()
+  }
+  if (submitState.value !== 'success') {
+    setLoginRedirectSuppressed(false)
+  }
   stopLockTimer()
   stopSubmitTimers()
 })
@@ -584,33 +655,6 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="relative h-[min(650px,calc(100dvh-28px))] w-full max-w-[1180px] overflow-hidden rounded-[36px] border border-white/55 bg-white/86 shadow-[0_30px_80px_rgba(15,23,42,0.14)] backdrop-blur-md max-[1120px]:h-auto">
-      <div
-        v-if="showBlockingOverlay"
-        class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[rgba(15,23,42,0.46)] px-6 text-center backdrop-blur-[6px]"
-      >
-        <span
-          v-if="isSubmitting || isPageLoading"
-          class="inline-block h-16 w-16 rounded-full border-2 border-white/20 border-t-white animate-spin"
-          aria-hidden="true"
-        ></span>
-        <svg
-          v-else
-          class="h-16 w-16 text-emerald-300"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-        </svg>
-        <p class="mt-6 text-[1.15rem] font-black tracking-[-0.03em] text-white">
-          {{ overlayTitle }}
-        </p>
-        <p class="mt-2 max-w-sm text-sm leading-6 text-white/74">
-          {{ overlayText }}
-        </p>
-      </div>
-
       <div class="grid h-full lg:grid-cols-[0.96fr_1.04fr] max-[1120px]:h-auto max-[1120px]:grid-cols-1">
         <section class="relative flex min-h-[320px] h-full flex-col justify-between overflow-hidden bg-[#0D1B2A] px-6 py-5 text-white md:px-8 md:py-6 lg:min-h-0 max-[1120px]:min-h-[300px]" :class="showLampReveal ? 'animate-auth-panel-drop origin-left motion-reduce:animate-none' : ''" aria-hidden="true">
           <div class="absolute inset-0 bg-cover" style="background-image: url('/images/landing-plumbing-hero.png'); background-position: 66% 15%; background-size: 126% auto;"></div>

@@ -168,9 +168,15 @@ import {
   employeeSidebarItems,
   employeeSidebarNote,
 } from '@/lib/employee-rbac'
+import {
+  readEmployeeDashboardCache,
+  writeEmployeeDashboardCache,
+} from '@/lib/employee-dashboard-cache'
 
 const activeMenu = ref("Profile");
-const loading = ref(true);
+const cachedDashboardState = readEmployeeDashboardCache();
+const hasCachedDashboardState = Boolean(cachedDashboardState);
+const loading = ref(!hasCachedDashboardState);
 const profile = ref({
   first_name: "",
   middle_initial: "",
@@ -211,15 +217,28 @@ const navigateTo = (menu, url) => {
   router.visit(url);
 };
 
-const fetchProfile = async () => {
-  loading.value = true;
+const applyDashboardPayload = (payload = {}) => {
+  profile.value = payload.profile || profile.value;
+  employeeData.value = payload.employee || null;
+  notifications.value = Array.isArray(payload.notifications) ? payload.notifications : [];
+};
+
+if (hasCachedDashboardState) {
+  applyDashboardPayload(cachedDashboardState);
+}
+
+const fetchProfile = async ({ background = hasCachedDashboardState } = {}) => {
+  if (!background) {
+    loading.value = true;
+  }
   try {
     const res = await axios.get("/employee/dashboard-data");
-    profile.value = res.data.profile;
-    employeeData.value = res.data.employee || null;
-    notifications.value = Array.isArray(res.data.notifications) ? res.data.notifications : [];
+    applyDashboardPayload(res.data || {});
+    writeEmployeeDashboardCache(res.data || {});
   } catch (err) {
-    Swal.fire("Error", "Failed to load profile.", "error");
+    if (!background) {
+      Swal.fire("Error", "Failed to load profile.", "error");
+    }
   } finally {
     loading.value = false;
   }
@@ -309,5 +328,7 @@ const logout = async () => {
   await confirmAndLogout()
 };
 
-onMounted(fetchProfile);
+onMounted(() => {
+  fetchProfile({ background: hasCachedDashboardState });
+});
 </script>

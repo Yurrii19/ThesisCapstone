@@ -1,4 +1,4 @@
-import { computed, defineComponent, h, reactive, shallowReactive, watchEffect } from 'vue';
+import { computed, defineComponent, h, onMounted, reactive, shallowReactive, watchEffect } from 'vue';
 
 export const page = shallowReactive({
     component: '',
@@ -201,9 +201,30 @@ export const Link = defineComponent({
         href: { type: String, required: true },
         as: { type: String, default: 'a' },
         method: { type: String, default: 'get' },
+        prefetch: { type: Boolean, default: false },
     },
     setup(props, { slots, attrs }) {
         const tag = computed(() => (props.as === 'button' ? 'button' : 'a'));
+        const invokeAttrHandler = (handler, event) => {
+            if (typeof handler === 'function') {
+                handler(event);
+                return;
+            }
+
+            if (Array.isArray(handler)) {
+                handler.forEach((entry) => {
+                    if (typeof entry === 'function') {
+                        entry(event);
+                    }
+                });
+            }
+        };
+        const maybePrefetch = () => {
+            if (!props.prefetch) return;
+            if (!spaRouter || typeof spaRouter.prefetch !== 'function') return;
+            if (typeof props.href !== 'string' || !props.href.startsWith('/')) return;
+            spaRouter.prefetch(props.href).catch(() => {});
+        };
         const onClick = (event) => {
             event?.preventDefault?.();
             const method = String(props.method || 'get').toLowerCase();
@@ -220,6 +241,30 @@ export const Link = defineComponent({
             }
             router.visit(props.href);
         };
+        const onMouseenter = (event) => {
+            invokeAttrHandler(attrs.onMouseenter, event);
+            maybePrefetch();
+        };
+        const onFocus = (event) => {
+            invokeAttrHandler(attrs.onFocus, event);
+            maybePrefetch();
+        };
+
+        onMounted(() => {
+            if (!props.prefetch) return;
+
+            if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(() => {
+                    maybePrefetch();
+                }, { timeout: 1500 });
+                return;
+            }
+
+            window.setTimeout(() => {
+                maybePrefetch();
+            }, 0);
+        });
+
         return () =>
             h(
                 tag.value,
@@ -228,6 +273,8 @@ export const Link = defineComponent({
                     href: tag.value === 'a' ? props.href : undefined,
                     type: tag.value === 'button' ? 'button' : undefined,
                     onClick,
+                    onMouseenter,
+                    onFocus,
                 },
                 slots.default ? slots.default() : []
             );

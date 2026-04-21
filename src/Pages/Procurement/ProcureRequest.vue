@@ -184,7 +184,7 @@ const props = defineProps({
 const REQUEST_CACHE_KEY = 'procurement-requests'
 const cachedRequestState = readCachedViewState(REQUEST_CACHE_KEY, null)
 const hasCachedRequestState = Boolean(cachedRequestState)
-const requests = ref(Array.isArray(cachedRequestState?.requests) ? cachedRequestState.requests : [])
+const requests = ref([])
 const loading = ref(!hasCachedRequestState)
 const refreshing = ref(false)
 const inventorySummary = ref(Array.isArray(cachedRequestState?.inventorySummary) ? cachedRequestState.inventorySummary : [])
@@ -292,9 +292,13 @@ const normalizeRequest = (r) => {
     tempQty: 0,
     tempNotes: '',
     tempUnit: 'pcs',
-    serviceMaterialOptions: [],
+    serviceMaterialOptions: Array.isArray(r.serviceMaterialOptions) ? r.serviceMaterialOptions : [],
   }
 }
+
+const hydrateCachedRequests = (rows = []) => (
+  (Array.isArray(rows) ? rows : []).map((row) => normalizeRequest(row))
+)
 
 const maxAllowedForRequest = (req, materialName, unit = 'pcs') => {
   const key = normalizeKey(materialName, unit)
@@ -372,6 +376,21 @@ const loadSuggestedMaterials = async (normalizedRequests) => {
       }
     })
   )
+}
+
+if (hasCachedRequestState) {
+  requests.value = hydrateCachedRequests(cachedRequestState?.requests)
+  const needsSuggestedMaterials = requests.value.some((req) => !Array.isArray(req.serviceMaterialOptions) || !req.serviceMaterialOptions.length)
+  if (needsSuggestedMaterials) {
+    loadSuggestedMaterials(requests.value)
+      .then(() => {
+        writeCachedViewState(REQUEST_CACHE_KEY, {
+          requests: requests.value,
+          inventorySummary: inventorySummary.value,
+        })
+      })
+      .catch(() => {})
+  }
 }
 
 const fetchRequests = async ({ background = false } = {}) => {

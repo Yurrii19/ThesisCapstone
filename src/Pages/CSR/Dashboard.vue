@@ -571,9 +571,13 @@ import { usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from '@/lib/sweetalert-toast-shim'
 import { confirmAndLogout } from '@/lib/auth-flow'
+import { CSR_DASHBOARD_CACHE_KEY } from '@/lib/dashboard-prefetch'
+import { readCachedViewState, writeCachedViewState } from '@/lib/view-state-cache'
 
 const page = usePage()
 const authUser = computed(() => page.props.auth?.user || null)
+const cachedDashboardState = readCachedViewState(CSR_DASHBOARD_CACHE_KEY, null)
+const hasCachedDashboardState = Boolean(cachedDashboardState)
 
 const tabs = [
   { key: 'overview', label: 'Flow Overview', icon: 'FO', hint: 'CSR-first summary and department handoff' },
@@ -583,9 +587,9 @@ const tabs = [
 ]
 
 const activeTab = ref('overview')
-const loading = ref(false)
+const loading = ref(!hasCachedDashboardState)
 const workingRequestId = ref(null)
-const scope = ref({
+const scope = ref(cachedDashboardState?.scope || {
   business_id: null,
   business_name: null,
 })
@@ -595,10 +599,11 @@ const stats = ref({
   forwarded_requests: 0,
   residential: 0,
   commercial: 0,
+  ...(cachedDashboardState?.stats || {}),
 })
-const intakeQueue = ref([])
-const paymentQueue = ref([])
-const forwardedQueue = ref([])
+const intakeQueue = ref(Array.isArray(cachedDashboardState?.intake_queue) ? cachedDashboardState.intake_queue : [])
+const paymentQueue = ref(Array.isArray(cachedDashboardState?.payment_queue) ? cachedDashboardState.payment_queue : [])
+const forwardedQueue = ref(Array.isArray(cachedDashboardState?.forwarded_queue) ? cachedDashboardState.forwarded_queue : [])
 const showIntakeReviewModal = ref(false)
 const selectedIntakeRequest = ref(null)
 
@@ -758,21 +763,30 @@ function csrStageLabel(item) {
   return prettyValue(workflowStage || operationsStage || procurementStage || pricingStage, 'In Workflow')
 }
 
-async function fetchDashboard() {
-  loading.value = true
+function applyDashboardPayload(payload = {}) {
+  scope.value = payload.scope || { business_id: null, business_name: null }
+  stats.value = {
+    ...stats.value,
+    ...(payload.stats || {}),
+  }
+  intakeQueue.value = Array.isArray(payload.intake_queue) ? payload.intake_queue : []
+  paymentQueue.value = Array.isArray(payload.payment_queue) ? payload.payment_queue : []
+  forwardedQueue.value = Array.isArray(payload.forwarded_queue) ? payload.forwarded_queue : []
+}
+
+async function fetchDashboard({ background = hasCachedDashboardState } = {}) {
+  if (!background) {
+    loading.value = true
+  }
   try {
     const res = await axios.get('/csr/dashboard-data')
     const payload = res?.data || {}
-    scope.value = payload.scope || { business_id: null, business_name: null }
-    stats.value = {
-      ...stats.value,
-      ...(payload.stats || {}),
-    }
-    intakeQueue.value = Array.isArray(payload.intake_queue) ? payload.intake_queue : []
-    paymentQueue.value = Array.isArray(payload.payment_queue) ? payload.payment_queue : []
-    forwardedQueue.value = Array.isArray(payload.forwarded_queue) ? payload.forwarded_queue : []
+    applyDashboardPayload(payload)
+    writeCachedViewState(CSR_DASHBOARD_CACHE_KEY, payload)
   } catch {
-    Swal.fire('Error', 'Failed to load CSR dashboard data.', 'error')
+    if (!background) {
+      Swal.fire('Error', 'Failed to load CSR dashboard data.', 'error')
+    }
   } finally {
     loading.value = false
   }
@@ -867,6 +881,6 @@ onMounted(() => {
   if (tabs.some((item) => item.key === savedTab)) {
     activeTab.value = savedTab
   }
-  fetchDashboard()
+  fetchDashboard({ background: hasCachedDashboardState })
 })
 </script>

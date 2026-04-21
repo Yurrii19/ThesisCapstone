@@ -11,6 +11,7 @@ import { useTheme } from '@/Composables/useTheme';
 import {
     createRoutePath,
     getDashboardPathForRole,
+    isLoginRedirectSuppressed,
     isRegistrationRedirectSuppressed,
     isPublicPath,
     shouldRedirectAuthenticatedUser,
@@ -20,6 +21,10 @@ import {
     completeInitialGlobalLoading,
     installGlobalNavigationLoading,
 } from '@/lib/global-loading';
+import {
+    prefetchWorkspaceRoutes,
+    warmRoleDashboardData,
+} from '@/lib/dashboard-prefetch';
 
 const routeMap = {
     'profile.edit': '/Profile/Edit',
@@ -89,7 +94,14 @@ watchFirebaseSession((authState) => {
         return;
     }
 
+    warmRoleDashboardData(authState?.user).catch(() => {});
+    prefetchWorkspaceRoutes(authState?.user, router).catch(() => {});
+
     if (isRegistrationRedirectSuppressed()) {
+        return;
+    }
+
+    if (isLoginRedirectSuppressed()) {
         return;
     }
 

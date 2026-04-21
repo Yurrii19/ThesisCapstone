@@ -946,6 +946,33 @@ const writeEmployeeCache = (rows = []) => {
   }
 };
 
+const ACCOUNT_EMAIL_PROBE_MAX_AGE_MS = 2 * 60 * 1000;
+const accountEmailProbeCache = new Map();
+
+const readAccountEmailProbe = (email) => {
+  const key = normalizeEmailCandidate(email);
+  if (!key) return null;
+
+  const cached = accountEmailProbeCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.savedAt > ACCOUNT_EMAIL_PROBE_MAX_AGE_MS) {
+    accountEmailProbeCache.delete(key);
+    return null;
+  }
+
+  return cached;
+};
+
+const writeAccountEmailProbe = (email, result) => {
+  const key = normalizeEmailCandidate(email);
+  if (!key) return;
+
+  accountEmailProbeCache.set(key, {
+    savedAt: Date.now(),
+    ...result,
+  });
+};
+
 const resolveEmployeeFullName = (employee) => {
   const direct = trimString(employee?.name || employee?.fullName);
   if (direct) return direct;
@@ -1258,7 +1285,7 @@ watch(
     }
     userAccountEmailTimer = window.setTimeout(() => {
       verifyAccountEmail({ silent: true });
-    }, 180);
+    }, 120);
   }
 );
 
@@ -1664,38 +1691,40 @@ const addEmployee = async () => {
   );
 };
 
-const confirmRemove = (employeeId) => {
-  Swal.fire({
+const confirmRemove = async (employeeId) => {
+  const result = await Swal.fire({
     title: "Remove employee?",
     text: "This action will remove the employee from the list.",
     icon: "warning",
     showCancelButton: true,
     confirmButtonColor: "#0f172a",
     confirmButtonText: "Yes, remove",
-  }).then((result) => {
-    if (result.isConfirmed) {
-      axios
-        .delete(`/hr/employees/${employeeId}`)
-        .then(() => {
-          employees.value = employees.value.filter((employee) => employee.id !== employeeId);
-          writeEmployeeCache(employees.value);
-          Swal.fire({
-            icon: "success",
-            title: "Removed",
-            text: "Employee was removed from the list.",
-            timer: 1200,
-            showConfirmButton: false,
-          });
-        })
-        .catch(() => {
-          Swal.fire({
-            icon: "error",
-            title: "Remove failed",
-            text: "Unable to remove the employee.",
-          });
-        });
-    }
   });
+
+  if (!result.isConfirmed) return;
+
+  const previousEmployees = [...employees.value];
+  employees.value = employees.value.filter((employee) => employee.id !== employeeId);
+  writeEmployeeCache(employees.value);
+
+  try {
+    await axios.delete(`/hr/employees/${employeeId}`, { skipGlobalLoading: true });
+    Swal.fire({
+      icon: "success",
+      title: "Removed",
+      text: "Employee was removed from the list.",
+      timer: 900,
+      showConfirmButton: false,
+    });
+  } catch {
+    employees.value = previousEmployees;
+    writeEmployeeCache(employees.value);
+    Swal.fire({
+      icon: "error",
+      title: "Remove failed",
+      text: "Unable to remove the employee.",
+    });
+  }
 };
 
 const toggleStatus = (employeeId) => {
@@ -1958,22 +1987,38 @@ const verifyAccountEmail = async ({ silent = false } = {}) => {
     return;
   }
 
+  const cachedProbe = readAccountEmailProbe(normalizedEmail);
+  if (cachedProbe) {
+    accountEmailStatus.value = cachedProbe.status;
+    accountEmailMessage.value = cachedProbe.message;
+    accountEmailChecked.value = cachedProbe.status === "success";
+    return;
+  }
+
   checkingAccountEmail.value = true;
   accountEmailStatus.value = "checking";
   accountEmailMessage.value = "Checking if this email already exists...";
 
   try {
-    const res = await axios.post("/check-email", { email: normalizedEmail }, { skipGlobalLoading: true });
+    const res = await axios.post("/check-email", { email: normalizedEmail }, { skipGlobalLoading: true, timeout: 2500 });
     if (Boolean(res?.data?.exists)) {
       accountEmailStatus.value = "error";
       accountEmailMessage.value = "This email is already registered.";
       accountEmailChecked.value = false;
+      writeAccountEmailProbe(normalizedEmail, {
+        status: "error",
+        message: "This email is already registered.",
+      });
       if (!silent) Swal.fire("Email Taken", "This email is already registered.", "error");
       return;
     }
     accountEmailStatus.value = "success";
     accountEmailMessage.value = "Email is available.";
     accountEmailChecked.value = true;
+    writeAccountEmailProbe(normalizedEmail, {
+      status: "success",
+      message: "Email is available.",
+    });
   } catch (error) {
     const message = error?.response?.data?.message || "Unable to verify email right now.";
     accountEmailStatus.value = "error";

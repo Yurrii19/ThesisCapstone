@@ -727,6 +727,7 @@ const isDuplicateEmailMessage = (message) => {
   const normalized = String(message || '').trim()
   return normalized === DUPLICATE_EMAIL_MESSAGE || normalized === LEGACY_DUPLICATE_EMAIL_MESSAGE
 }
+const isConnectivityIssueMessage = (message) => /cors|failed to fetch|network error|service could not be reached|access-control-allow-origin|preflight|unreachable/i.test(String(message || ''))
 const getFilePreviewUrl = (field) => previewUrls.value?.[field] || ''
 const getFilePreviewAlt = (field, fallback = 'Preview') => {
   const file = form[field]
@@ -818,7 +819,11 @@ const checkEmailAvailability = async () => {
   } catch (err) {
     const unavailableMessage = err?.response?.data?.message
     const emailErr = err?.response?.data?.errors?.email?.[0]
-    const rawMessage = unavailableMessage || emailErr || (err instanceof Error ? err.message : 'Unable to validate email right now.')
+    const rawMessage = getFriendlyFirebaseErrorMessage(
+      err,
+      unavailableMessage || emailErr || (err instanceof Error ? err.message : 'Unable to validate email right now.'),
+      'general',
+    )
     const msg = isDuplicateEmailAvailabilityMessage(rawMessage)
       ? DUPLICATE_EMAIL_MESSAGE
       : String(rawMessage)
@@ -848,7 +853,11 @@ const checkContactAvailability = async () => {
     form.clearErrors('contact_number')
     return true
   } catch (err) {
-    const message = err?.response?.data?.message || (err instanceof Error ? err.message : 'Unable to validate contact number right now.')
+    const message = getFriendlyFirebaseErrorMessage(
+      err,
+      err?.response?.data?.message || (err instanceof Error ? err.message : 'Unable to validate contact number right now.'),
+      'general',
+    )
     form.setError('contact_number', String(message))
     setOtpStatus('error', String(message))
     Swal.fire('Contact Check Failed', String(message), 'error')
@@ -1010,6 +1019,15 @@ const sendOtp = async () => {
     }
 
     const failureMessage = msg || 'Failed to send OTP. Try again.'
+    if (isConnectivityIssueMessage(failureMessage)) {
+      form.clearErrors('email', 'contact_number')
+      setOtpStatus('error', failureMessage)
+      showOtpStatusToast('error', failureMessage, 3600)
+      Swal.fire('Connection Problem', failureMessage, 'error')
+      otpModal.value = false
+      otpSent.value = false
+      return false
+    }
     if (emailIsAvailable.value && /failed to send otp email|otp service is not deployed/i.test(failureMessage)) {
       const detailed = `${failureMessage} Your email is available. Please check the OTP server (Firebase Functions + SMTP) and try again.`
       setOtpStatus('error', detailed)

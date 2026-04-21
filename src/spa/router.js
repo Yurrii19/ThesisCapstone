@@ -184,6 +184,60 @@ export function createSpaRouter(inertiaPage) {
         },
     });
 
+    const prefetchedTargets = new Set();
+
+    const resolvePrefetchTarget = (rawTarget) => {
+        let target = router.resolve(rawTarget || '/');
+
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            const redirectRecord = target.matched.find((record) => record.redirect);
+            if (!redirectRecord) {
+                return target;
+            }
+
+            const redirect = typeof redirectRecord.redirect === 'function'
+                ? redirectRecord.redirect(target)
+                : redirectRecord.redirect;
+
+            if (!redirect) {
+                return target;
+            }
+
+            const nextTarget = typeof redirect === 'string'
+                ? { path: redirect, query: target.query, hash: target.hash }
+                : {
+                    ...redirect,
+                    query: redirect.query ?? target.query,
+                    hash: redirect.hash ?? target.hash,
+                };
+
+            const resolvedNext = router.resolve(nextTarget);
+            if (resolvedNext.fullPath === target.fullPath) {
+                return target;
+            }
+
+            target = resolvedNext;
+        }
+
+        return target;
+    };
+
+    router.prefetch = async (rawTarget) => {
+        const target = resolvePrefetchTarget(rawTarget);
+        const cacheKey = target.fullPath || String(rawTarget || '/');
+        if (!cacheKey || prefetchedTargets.has(cacheKey)) {
+            return [];
+        }
+
+        prefetchedTargets.add(cacheKey);
+
+        const loaders = target.matched
+            .map((record) => record.components?.default || record.component)
+            .filter((component) => typeof component === 'function');
+
+        return Promise.allSettled(loaders.map((loader) => loader()));
+    };
+
     router.beforeEach((to) => {
         const path = normalizePagePath(to.params?.pagePath);
         inertiaPage.component = path;

@@ -160,8 +160,12 @@ import Swal from '@/lib/sweetalert-toast-shim'
 import HrSidebarNav from '@/Components/HrSidebarNav.vue'
 import HrTopbar from '@/Components/HrTopbar.vue'
 import { confirmAndLogout } from '@/lib/auth-flow'
+import { HR_DASHBOARD_CACHE_KEY } from '@/lib/dashboard-prefetch'
+import { readCachedViewState, writeCachedViewState } from '@/lib/view-state-cache'
 
 const activeMenu = ref('Dashboard')
+const cachedDashboardState = readCachedViewState(HR_DASHBOARD_CACHE_KEY, null)
+const hasCachedDashboardState = Boolean(cachedDashboardState)
 
 const stats = ref({
   totalEmployees: 0,
@@ -170,11 +174,13 @@ const stats = ref({
   priorityRoles: 0,
   onLeave: 0,
   leaveType: 'On Leave',
+  ...(cachedDashboardState?.stats || {}),
 })
-const teamSummary = ref([])
+const teamSummary = ref(cachedDashboardState?.teamSummary || [])
 const payrollReady = ref({
   employee_earnings_total: 0,
   earning_rows: 0,
+  ...(cachedDashboardState?.payrollReady || {}),
 })
 
 const shortcuts = [
@@ -251,25 +257,32 @@ const openPayrollWorkspace = () => {
   navigateTo('Payroll', '/hr/payroll')
 }
 
-const fetchDashboardData = async () => {
+const applyDashboardPayload = (payload = {}) => {
+  stats.value = {
+    ...stats.value,
+    ...(payload.stats || {}),
+  }
+  teamSummary.value = payload.teamSummary || []
+  payrollReady.value = {
+    ...payrollReady.value,
+    ...(payload.payrollReady || {}),
+  }
+}
+
+const fetchDashboardData = async ({ background = hasCachedDashboardState } = {}) => {
   try {
     const res = await axios.get('/hr/dashboard-data')
-    stats.value = {
-      ...stats.value,
-      ...(res.data?.stats || {}),
-    }
-    teamSummary.value = res.data?.teamSummary || []
-    payrollReady.value = {
-      ...payrollReady.value,
-      ...(res.data?.payrollReady || {}),
-    }
+    applyDashboardPayload(res.data || {})
+    writeCachedViewState(HR_DASHBOARD_CACHE_KEY, res.data || {})
   } catch (error) {
-    Swal.fire('Error', 'Failed to load dashboard data', 'error')
+    if (!background) {
+      Swal.fire('Error', 'Failed to load dashboard data', 'error')
+    }
   }
 }
 
 onMounted(() => {
-  fetchDashboardData()
+  fetchDashboardData({ background: hasCachedDashboardState })
 })
 
 const logout = async () => {
