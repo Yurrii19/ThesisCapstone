@@ -1805,7 +1805,6 @@ onBeforeUnmount(()=>{
               <div :class="fieldCardClass('email')" class="mb-3 flex flex-col gap-1 [&>label]:font-semibold [&>label]:text-teal-700">
                 <label>Email Address</label>
                 <TextInput v-model="form.email" :class="textInputClass('email')" required @blur="validateEmailAvailabilityOnBlur"/>
-                <p class="text-xs text-slate-500 mt-1">Use a public email domain like gmail.com, yahoo.com, outlook.com, or .com.ph.</p>
                 <p v-if="form.errors.email" class="text-rose-600 text-xs mt-1">{{ form.errors.email }}</p>
               </div>
               <div :class="fieldCardClass('contact_number')" class="mb-3 flex flex-col gap-1 [&>label]:font-semibold [&>label]:text-teal-700">
@@ -2037,7 +2036,6 @@ onBeforeUnmount(()=>{
               <div :class="fieldCardClass('email')" class="mb-3 flex flex-col gap-1 [&>label]:font-semibold [&>label]:text-teal-700">
                 <label>Email Address</label>
                 <TextInput v-model="form.email" :class="textInputClass('email')" required @blur="validateEmailAvailabilityOnBlur"/>
-                <p class="text-xs text-slate-500 mt-1">Use a public email domain like gmail.com, yahoo.com, outlook.com, or .com.ph.</p>
                 <p v-if="form.errors.email" class="text-rose-600 text-xs mt-1">{{ form.errors.email }}</p>
               </div>
               <div :class="fieldCardClass('contact_number')" class="mb-3 flex flex-col gap-1 [&>label]:font-semibold [&>label]:text-teal-700">
