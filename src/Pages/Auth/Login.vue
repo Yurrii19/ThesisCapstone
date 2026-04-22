@@ -158,6 +158,8 @@ const toast = (typeof window !== 'undefined' && window.__appFeedbackToast)
       position: POSITION.TOP_RIGHT,
       timeout: 2400,
       closeOnClick: true,
+      closeButton: 'button',
+      showCloseButtonOnHover: false,
       pauseOnHover: true,
     })
 if (typeof window !== 'undefined' && !window.__appFeedbackToast) {
@@ -183,7 +185,7 @@ const upsertAuthProgressToast = (type, message, options = {}) => {
 
   const nextOptions = {
     id: AUTH_PROGRESS_TOAST_ID,
-    closeButton: false,
+    closeButton: 'button',
     closeOnClick: false,
     draggable: false,
     pauseOnHover: false,
@@ -302,18 +304,6 @@ const stopSubmitTimers = () => {
 
 const startSubmitTimers = () => {
   stopSubmitTimers()
-
-  submitSlowTimer = window.setTimeout(() => {
-    if (!form.processing || submitState.value !== 'submitting') return
-    submitStatusText.value = 'Still checking your account. Please wait a moment...'
-    showSubmittingToast(submitStatusText.value)
-  }, 2500)
-
-  submitLongTimer = window.setTimeout(() => {
-    if (!form.processing || submitState.value !== 'submitting') return
-    submitStatusText.value = 'Still contacting the server. You will see the real result as soon as it responds...'
-    showSubmittingToast(submitStatusText.value)
-  }, 8000)
 }
 
 const startLockCountdown = (seconds) => {
@@ -504,7 +494,7 @@ const submitLogin = async () => {
 
   form.processing = true
   submitState.value = 'submitting'
-  submitStatusText.value = 'Checking your account...'
+  submitStatusText.value = 'Logging in...'
   form.clearErrors()
   setLoginRedirectSuppressed(true)
   showSubmittingToast(submitStatusText.value)

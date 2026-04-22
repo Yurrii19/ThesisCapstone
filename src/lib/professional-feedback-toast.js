@@ -3,6 +3,8 @@ const PROFESSIONAL_TOAST_CLASS = 'professional-feedback-toast'
 const PROFESSIONAL_TOAST_BODY_CLASS = 'professional-feedback-toast-body'
 const PROFESSIONAL_TOAST_SUCCESS_CLASS = 'professional-feedback-toast-success'
 const PROFESSIONAL_TOAST_ERROR_CLASS = 'professional-feedback-toast-error'
+const PROFESSIONAL_TOAST_INFO_CLASS = 'professional-feedback-toast-info'
+const PROFESSIONAL_TOAST_WARNING_CLASS = 'professional-feedback-toast-warning'
 
 export const ensureProfessionalFeedbackToastStyles = () => {
   if (typeof document === 'undefined' || document.getElementById(PROFESSIONAL_TOAST_STYLE_ID)) {
@@ -28,8 +30,16 @@ export const ensureProfessionalFeedbackToastStyles = () => {
       background: linear-gradient(135deg, #fff7ed 0%, #fff1f2 54%, #ffffff 100%) !important;
       border-left: 4px solid #dc2626 !important;
     }
+    .${PROFESSIONAL_TOAST_INFO_CLASS} {
+      background: linear-gradient(135deg, #f5fbff 0%, #ecfeff 48%, #f8fafc 100%) !important;
+      border-left: 4px solid #0891b2 !important;
+    }
+    .${PROFESSIONAL_TOAST_WARNING_CLASS} {
+      background: linear-gradient(135deg, #fffaf0 0%, #fef3c7 44%, #ffffff 100%) !important;
+      border-left: 4px solid #d97706 !important;
+    }
     .${PROFESSIONAL_TOAST_BODY_CLASS} {
-      padding: 14px 16px !important;
+      padding: 14px 40px 14px 16px !important;
       white-space: pre-line !important;
       font-size: 13px !important;
       line-height: 1.5 !important;
@@ -52,14 +62,18 @@ export const showProfessionalFeedbackToast = (toast, type, title, detail = '', t
     return
   }
 
-  const toneClass = type === 'success'
-    ? PROFESSIONAL_TOAST_SUCCESS_CLASS
-    : PROFESSIONAL_TOAST_ERROR_CLASS
+  const normalizedType = String(type || 'info').trim().toLowerCase()
+  const toneClass = {
+    success: PROFESSIONAL_TOAST_SUCCESS_CLASS,
+    error: PROFESSIONAL_TOAST_ERROR_CLASS,
+    info: PROFESSIONAL_TOAST_INFO_CLASS,
+    warning: PROFESSIONAL_TOAST_WARNING_CLASS,
+  }[normalizedType] || PROFESSIONAL_TOAST_INFO_CLASS
 
-  handler(detail ? `${title}\n${detail}` : title, {
+  return handler(detail ? `${title}\n${detail}` : title, {
     timeout,
     icon: false,
-    closeButton: false,
+    closeButton: 'button',
     hideProgressBar: true,
     toastClassName: [PROFESSIONAL_TOAST_CLASS, toneClass],
     bodyClassName: PROFESSIONAL_TOAST_BODY_CLASS,

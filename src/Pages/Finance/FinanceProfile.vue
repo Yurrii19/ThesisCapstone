@@ -146,6 +146,8 @@ const showEditModal = ref(false)
 const toast = createToastInterface({
   position: POSITION.TOP_RIGHT,
   timeout: 1800,
+  closeButton: 'button',
+  showCloseButtonOnHover: false,
 })
 
 const initials = computed(() => {

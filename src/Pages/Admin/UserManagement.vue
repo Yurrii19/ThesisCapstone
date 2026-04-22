@@ -71,20 +71,20 @@
       <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
           <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">User records</p>
-          <p class="mt-1 text-sm text-slate-600">Pending registrations stay visible first. Rejected entries are moved into archive.</p>
+          <p class="mt-1 text-sm text-slate-600">Pending registrations stay visible first. Approve or reject directly from the queue, or open the full review first.</p>
         </div>
         <p class="text-xs font-semibold text-slate-500">{{ filteredUsers.length }} record(s) shown</p>
       </div>
       <div class="w-full overflow-x-auto overflow-y-hidden">
-      <table class="min-w-[1000px] w-full table-fixed text-sm">
+      <table class="min-w-[1160px] w-full table-fixed text-sm">
         <thead class="border-b border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,0.98),_rgba(240,249,255,0.92))] text-xs uppercase tracking-[0.12em] text-slate-600">
           <tr>
             <th class="w-[15%] px-6 py-3 text-left">Full Name</th>
             <th class="w-[16%] px-6 py-3 text-left">Email</th>
             <th class="w-[9%] px-6 py-3 text-left">Role</th>
             <th class="w-[15%] px-6 py-3 text-left">Workspace Classification</th>
-            <th class="w-[8%] px-6 py-3 text-center">Status</th>
-            <th class="w-[8%] px-6 py-3 text-right">Actions</th>
+            <th class="w-[9%] px-6 py-3 text-center">Status</th>
+            <th class="w-[18%] px-6 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody class="divide-y">
@@ -138,33 +138,53 @@
             <td class="px-6 py-4 text-right align-top">
               <div class="flex flex-wrap justify-end gap-2">
                 <button
+                  v-if="canQuickApproveUser(user)"
+                  @click="quickApproveUser(user)"
+                  :disabled="isUserActionBusy(user)"
+                  class="inline-flex min-w-[92px] items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {{ userActionFor(user) === 'approve' ? 'Approving...' : 'Approve' }}
+                </button>
+                <button
+                  v-if="canQuickRejectUser(user)"
+                  @click="quickRejectUser(user)"
+                  :disabled="isUserActionBusy(user)"
+                  class="inline-flex min-w-[92px] items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {{ userActionFor(user) === 'reject' ? 'Rejecting...' : 'Reject' }}
+                </button>
+                <button
                   v-if="isReviewableUser(user)"
                   @click="openViewUser(user)"
-                  class="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-100"
+                  :disabled="isUserActionBusy(user)"
+                  class="inline-flex min-w-[92px] items-center justify-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                View
-              </button>
+                  Review
+                </button>
                 <button
                   v-if="canArchiveUser(user)"
                   @click="archiveUser(user)"
-                  class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                  :disabled="isUserActionBusy(user)"
+                  class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                Archive
-              </button>
+                  Archive
+                </button>
                 <button
                   v-if="canRestoreUser(user)"
                   @click="restoreUser(user)"
-                  class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                  :disabled="isUserActionBusy(user)"
+                  class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                Restore
-              </button>
+                  Restore
+                </button>
                 <button
                   v-if="canCorrectWrongEmail(user)"
                   @click="correctWrongEmail(user)"
-                  class="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                  :disabled="isUserActionBusy(user)"
+                  class="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                Wrong Email
-              </button>
+                  Wrong Email
+                </button>
               </div>
             </td>
           </tr>
@@ -454,7 +474,9 @@ import axios from 'axios'
 import { onValue, ref as realtimeRef } from 'firebase/database'
 import Swal from '@/lib/sweetalert-toast-shim'
 import { createToastInterface, POSITION } from 'vue-toastification'
+import { promptAdminAccountRejection } from '@/lib/admin-account-review'
 import { getStoredProfileCache } from '@/lib/firebase-auth'
+import { buildStoredFileUrlCandidates } from '@/lib/file-url'
 import { clearProfileResubmission, hasLocalResubmission } from '@/lib/profile-resubmission'
 import { firebaseConfigReady, realtimeDb } from '@/firebase/client'
 import ViewUser from './ViewUser.vue'
@@ -463,12 +485,47 @@ const ADMIN_TOAST_CLASS = 'admin-user-feedback-toast'
 const ADMIN_TOAST_BODY_CLASS = 'admin-user-feedback-toast-body'
 const ADMIN_TOAST_SUCCESS_CLASS = 'admin-user-feedback-toast-success'
 const ADMIN_TOAST_ERROR_CLASS = 'admin-user-feedback-toast-error'
+const ADMIN_PENDING_IMAGE_PRELOAD_LIMIT = 12
+const warmedPendingAdminImageUrls = new Set()
+
+const isLikelyImageFile = (value) => {
+  if (!value) return false
+  const normalized = String(value).toLowerCase().split('#')[0].split('?')[0]
+  return normalized.endsWith('.png')
+    || normalized.endsWith('.jpg')
+    || normalized.endsWith('.jpeg')
+    || normalized.endsWith('.jfif')
+    || normalized.endsWith('.gif')
+    || normalized.endsWith('.webp')
+    || normalized.endsWith('.bmp')
+    || normalized.endsWith('.tif')
+    || normalized.endsWith('.tiff')
+    || normalized.endsWith('.svg')
+}
+
+const preloadPendingAdminImageUrls = (urls = []) => {
+  if (typeof Image === 'undefined') return
+
+  urls
+    .map((url) => String(url || '').trim())
+    .filter(Boolean)
+    .forEach((url) => {
+      if (warmedPendingAdminImageUrls.has(url)) return
+      warmedPendingAdminImageUrls.add(url)
+      const image = new Image()
+      image.decoding = 'async'
+      image.loading = 'eager'
+      image.src = url
+    })
+}
 
 const toast = (typeof window !== 'undefined' && window.__appFeedbackToast)
   || createToastInterface({
     position: POSITION.TOP_RIGHT,
     timeout: 2400,
     closeOnClick: true,
+    closeButton: 'button',
+    showCloseButtonOnHover: false,
     pauseOnFocusLoss: true,
     pauseOnHover: true,
     draggable: true,
@@ -501,7 +558,7 @@ if (typeof document !== 'undefined' && !document.getElementById('admin-user-feed
       border-left: 4px solid #dc2626 !important;
     }
     .${ADMIN_TOAST_BODY_CLASS} {
-      padding: 14px 16px !important;
+      padding: 14px 40px 14px 16px !important;
       white-space: pre-line !important;
       font-size: 13px !important;
       line-height: 1.5 !important;
@@ -527,7 +584,7 @@ const showAdminFeedbackToast = (type, title, detail = '', timeout = 3600) => {
   handler(detail ? `${title}\n${detail}` : title, {
     timeout,
     icon: false,
-    closeButton: false,
+    closeButton: 'button',
     hideProgressBar: true,
     toastClassName: [ADMIN_TOAST_CLASS, toneClass],
     bodyClassName: ADMIN_TOAST_BODY_CLASS,
@@ -554,6 +611,7 @@ export default {
       liveResubmissionsUnsubscribe: null,
       liveAdminReviewQueueUnsubscribe: null,
       hasLiveUsersSnapshot: false,
+      rowActionState: {},
       pageSize: 10,
       currentPage: 1,
       newUser: {
@@ -809,6 +867,9 @@ export default {
     search() {
       this.currentPage = 1
     },
+    users(value) {
+      this.warmPendingUserAssets(value)
+    },
     filteredUsers() {
       this.clampCurrentPage()
     }
@@ -839,6 +900,38 @@ export default {
   },
 
   methods: {
+    warmPendingUserAssets(rows = []) {
+      const pendingRows = (Array.isArray(rows) ? rows : [])
+        .filter((row) => this.isPendingTabUser(row))
+        .slice(0, ADMIN_PENDING_IMAGE_PRELOAD_LIMIT)
+
+      if (!pendingRows.length) return
+
+      const urls = []
+      const pushImageCandidates = (row, value, explicitUrl, field) => {
+        if (!isLikelyImageFile(value) && !isLikelyImageFile(explicitUrl)) return
+
+        urls.push(...buildStoredFileUrlCandidates(value, {
+          explicitUrl,
+          uid: row?.uid || row?.id || row?.firebase_uid || '',
+          field,
+          defaultFolder: '',
+        }))
+      }
+
+      pendingRows.forEach((row) => {
+        pushImageCandidates(row, row?.profile_photo || row?.profile_photo_path, row?.profile_photo_url, 'profile_photo')
+        pushImageCandidates(row, row?.government_id_resubmission, row?.government_id_resubmission_url, 'government_id')
+        pushImageCandidates(row, row?.government_id, row?.government_id_url, 'government_id')
+
+        ;['bir_registration', 'dti_registration', 'mayor_permit', 'business_permit', 'sanitary_permit'].forEach((field) => {
+          pushImageCandidates(row, row?.[field], row?.[`${field}_url`], field)
+        })
+      })
+
+      preloadPendingAdminImageUrls(urls)
+    },
+
     syncGeneratedIdentity() {
       const roleLabel = this.resolveRoleLabel({
         role: this.newUser.role,
@@ -1226,6 +1319,132 @@ export default {
       }))
     },
 
+    reviewActionKey(user = {}) {
+      return String(user?.id || user?.uid || user?.firebase_uid || user?.email || '').trim()
+    },
+
+    userActionFor(user = {}) {
+      const key = this.reviewActionKey(user)
+      return key ? String(this.rowActionState?.[key] || '') : ''
+    },
+
+    isUserActionBusy(user = {}) {
+      return Boolean(this.userActionFor(user))
+    },
+
+    setUserActionState(user = {}, action = '') {
+      const key = this.reviewActionKey(user)
+      if (!key) return
+
+      if (!action) {
+        const nextState = { ...(this.rowActionState || {}) }
+        delete nextState[key]
+        this.rowActionState = nextState
+        return
+      }
+
+      this.rowActionState = {
+        ...(this.rowActionState || {}),
+        [key]: action,
+      }
+    },
+
+    canQuickApproveUser(user) {
+      return this.isReviewableUser(user)
+    },
+
+    canQuickRejectUser(user) {
+      return this.isReviewableUser(user)
+    },
+
+    async quickApproveUser(user) {
+      if (!this.canQuickApproveUser(user) || this.isUserActionBusy(user)) {
+        return
+      }
+
+      const confirm = await Swal.fire({
+        title: 'Approve this user?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, approve',
+      })
+      if (!confirm.isConfirmed) {
+        return
+      }
+
+      this.setUserActionState(user, 'approve')
+
+      try {
+        const res = await axios.post(`/admin/users/${user.id}/toggle-approval`, {}, { skipGlobalLoading: true })
+        const updatedUser = this.refreshDisplayUser(user, res.data?.user || {
+          ...user,
+          is_approved: res.data?.is_approved,
+          status: res.data?.is_approved ? 'approved' : 'pending',
+          approval_status: res.data?.is_approved ? 'approved' : 'pending',
+        })
+        this.handleApproved(updatedUser)
+        showAdminFeedbackToast(
+          'success',
+          'Account approved',
+          res.data?.message || 'User approved successfully.',
+          3200,
+        )
+      } catch (err) {
+        showAdminFeedbackToast(
+          'error',
+          'Approval failed',
+          err.response?.data?.message || 'Failed to approve user.',
+          3600,
+        )
+      } finally {
+        this.setUserActionState(user)
+      }
+    },
+
+    async quickRejectUser(user) {
+      if (!this.canQuickRejectUser(user) || this.isUserActionBusy(user)) {
+        return
+      }
+
+      const rejection = await promptAdminAccountRejection(Swal)
+      if (!rejection) {
+        return
+      }
+
+      this.setUserActionState(user, 'reject')
+
+      try {
+        const res = await axios.post(`/admin/users/${user.id}/reject`, {
+          checklist: rejection.checklist,
+          reason: rejection.reason,
+        }, { skipGlobalLoading: true })
+        const updatedUser = this.refreshDisplayUser(user, res.data?.user || {
+          ...user,
+          rejection_reason: rejection.reason,
+          rejection_checklist: rejection.checklist,
+          is_approved: false,
+          status: 'rejected',
+          approval_status: 'rejected',
+        })
+        this.handleRejected(updatedUser)
+        showAdminFeedbackToast(
+          'success',
+          'Account rejected',
+          res.data?.message || 'User rejected successfully.',
+          3200,
+        )
+      } catch (err) {
+        showAdminFeedbackToast(
+          'error',
+          'Rejection failed',
+          err.response?.data?.message || 'Failed to reject user.',
+          3600,
+        )
+      } finally {
+        this.setUserActionState(user)
+      }
+    },
+
     canArchiveUser(user) {
       return Boolean(user?.id && this.isApprovedState(user) && !this.isArchived(user) && this.normalizeRole(user?.role) !== 'admin')
     },
@@ -1451,6 +1670,7 @@ export default {
       return Boolean(value)
     },
     hasResubmittedDocuments(user) {
+      const status = this.normalizeStatus(user?.status || user?.approval_status)
       const reviewKind = this.normalizeStatus(user?.latest_account_review_kind)
       const reviewTitle = String(user?.latest_account_review_title || '').trim().toLowerCase()
       const reviewMessage = String(user?.latest_account_review_message || '').trim().toLowerCase()
@@ -1473,11 +1693,15 @@ export default {
         || reviewMessage.includes('resubmitted')
         || reviewMessage.includes('updated documents were submitted')
       )
+      const hasPendingStoredResubmission = hasStoredResubmissionFile && (
+        !this.flagValue(user?.is_approved)
+        || ['pending', 'pending_approval', 'rejected', 'under_review', 'reviewing'].includes(status)
+      )
       return Boolean(
         hasReviewResubmissionSignal
         || resubmittedAfterReview
         || hasLocalResubmission(user, reviewAt)
-        || (hasStoredResubmissionFile && (hasReviewResubmissionSignal || !reviewAt || resubmittedAfterReview))
+        || hasPendingStoredResubmission
       )
     },
     userState(user) {

@@ -119,7 +119,7 @@
                 <div>
                   <p class="text-xs font-bold uppercase tracking-[0.12em] text-teal-600">Account Review</p>
                   <h2 class="mt-2 text-2xl font-bold text-gray-800">
-                    {{ businessAccountState === 'rejected' ? 'Account Rejected' : 'Account Pending Approval' }}
+                    {{ businessAccountReviewTitle }}
                   </h2>
                   <p class="mt-2 max-w-2xl text-sm text-slate-600">
                     {{ businessReviewSummary }}
@@ -127,7 +127,7 @@
                 </div>
                 <span
                   class="inline-flex self-start rounded-full px-3 py-1 text-xs font-semibold"
-                  :class="businessAccountState === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'"
+                  :class="isBusinessCorrectionRequired ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'"
                 >
                   {{ businessAccountStatusLabel }}
                 </span>
@@ -159,7 +159,7 @@
                   </p>
                 </article>
               </div>
-              <div v-if="businessAccountState === 'rejected' && rejectionChecklistDetails.length" class="mt-4 rounded-xl border border-rose-200 bg-white px-4 py-3">
+              <div v-if="isBusinessCorrectionRequired && rejectionChecklistDetails.length" class="mt-4 rounded-xl border border-rose-200 bg-white px-4 py-3">
                 <p class="text-sm font-semibold text-rose-700">Required updates</p>
                 <div class="mt-2 space-y-2">
                   <div v-for="item in rejectionChecklistDetails" :key="item.key" class="rounded-lg border border-rose-100 bg-rose-50/60 px-3 py-2">
@@ -2827,6 +2827,8 @@ const toast = (typeof window !== 'undefined' && window.__appFeedbackToast)
   || createToastInterface({
     position: POSITION.TOP_RIGHT,
     timeout: 2200,
+    closeButton: 'button',
+    showCloseButtonOnHover: false,
   })
 if (typeof window !== 'undefined' && !window.__appFeedbackToast) {
   window.__appFeedbackToast = toast
@@ -2939,18 +2941,29 @@ const hasResubmittedDocuments = computed(() => {
 const businessAccountState = computed(() => {
   const status = trimString(authUser.status || authUser.approval_status).toLowerCase()
   if (status === 'approved' || authUser.is_approved) return 'approved'
+  if (status === 'deleted') return hasResubmittedDocuments.value ? 'pending' : 'deleted'
   if (status === 'rejected') return hasResubmittedDocuments.value ? 'pending' : 'rejected'
   if (['pending', 'pending_approval'].includes(status)) return 'pending'
   if (authUser.is_approved === false) return 'pending'
   return 'pending'
 })
+const isBusinessCorrectionRequired = computed(() => ['rejected', 'deleted'].includes(businessAccountState.value))
+const businessAccountReviewTitle = computed(() => {
+  if (businessAccountState.value === 'deleted') return 'Account Deleted'
+  if (businessAccountState.value === 'rejected') return 'Account Rejected'
+  return 'Account Pending Approval'
+})
 const businessAccountStatusLabel = computed(() => {
   if (businessAccountState.value === 'approved') return 'Approved'
+  if (businessAccountState.value === 'deleted') return 'Deleted'
   if (businessAccountState.value === 'rejected') return 'Rejected'
   return 'Pending Review'
 })
-const canResubmitBusinessDocuments = computed(() => businessAccountState.value === 'rejected')
+const canResubmitBusinessDocuments = computed(() => isBusinessCorrectionRequired.value)
 const businessReviewSummary = computed(() => {
+  if (businessAccountState.value === 'deleted') {
+    return 'Admin removed this business account from active use. Review the details below, correct the account information, then re-upload the required files to send it back for review.'
+  }
   if (businessAccountState.value === 'rejected') {
     return 'Admin returned your business account for document review. Check the details below, then re-upload the required files.'
   }
@@ -3144,7 +3157,7 @@ const submitBusinessDocuments = async () => {
     }, {})
     const formData = new FormData()
     formData.append('_method', 'PUT')
-    if (businessAccountState.value === 'rejected') {
+    if (isBusinessCorrectionRequired.value) {
       formData.append('force_resubmission', '1')
     }
 

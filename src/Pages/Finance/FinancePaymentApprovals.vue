@@ -49,6 +49,8 @@ const approvals = ref(props.approvals)
 const toast = createToastInterface({
   position: POSITION.TOP_RIGHT,
   timeout: 1800,
+  closeButton: 'button',
+  showCloseButtonOnHover: false,
 })
 
 async function setStatus(item, status) {

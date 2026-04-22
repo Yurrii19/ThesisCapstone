@@ -1,5 +1,6 @@
 import axios from 'axios'
 import Swal from '@/lib/sweetalert-toast-shim'
+import { queueLoggedOutToast } from '@/lib/app-toast'
 import { logoutWithFirebase } from '@/lib/firebase-auth'
 
 export async function confirmAndLogout({
@@ -37,6 +38,7 @@ export async function confirmAndLogout({
     })
 
     await logoutWithFirebase()
+    queueLoggedOutToast()
     window.location.replace(loginPath || '/Auth/Login')
     return true
   } catch (_error) {

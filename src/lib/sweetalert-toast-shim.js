@@ -5,6 +5,8 @@ const toast = (typeof window !== 'undefined' && window.__appFeedbackToast)
   position: POSITION.TOP_RIGHT,
   timeout: 1800,
   closeOnClick: true,
+  closeButton: 'button',
+  showCloseButtonOnHover: false,
   pauseOnFocusLoss: true,
   pauseOnHover: true,
   draggable: true,

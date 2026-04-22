@@ -542,23 +542,90 @@
           </div>
 
           <div v-else-if="isStatus(req, 'job_ready') && props.showStartJob" class="mt-4">
-            <button
-              type="button"
-              @click="startJob(req)"
-              class="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm"
-            >
-              Start Job
-            </button>
+            <div class="rounded-xl border border-sky-100 bg-sky-50 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-sky-700">Status 1</p>
+              <p class="mt-1 text-sm font-semibold text-slate-900">Arrived at Location</p>
+              <p class="mt-1 text-xs text-slate-600">Confirm arrival after materials and equipment are ready.</p>
+              <button
+                type="button"
+                @click="startJob(req)"
+                class="mt-3 bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm"
+              >
+                Mark Arrived
+              </button>
+            </div>
           </div>
 
           <div v-else-if="isStatus(req, 'job_ready') && !props.showStartJob" class="mt-4 text-slate-600 text-sm font-medium">
             Job is ready. Awaiting HR queue action.
           </div>
 
-          <div v-else-if="isStatus(req, 'in_progress') && props.showCompleteJob" class="mt-4">
+          <div v-else-if="isStatus(req, 'in_progress') && props.showCompleteJob" class="mt-4 space-y-4">
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p class="text-[11px] uppercase tracking-wide text-slate-500">Live Field Status</p>
+              <p class="mt-1 text-sm font-semibold text-slate-900">{{ liveReportStageLabel(req) }}</p>
+            </div>
+
+            <div v-if="showWorkInProgressForm(req)" class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Status 2</p>
+              <p class="mt-1 text-sm font-semibold text-slate-900">Work in Progress</p>
+              <p class="mt-1 text-xs text-slate-600">Upload before photos first, then mark the work as in progress.</p>
+              <div class="mt-3">
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  Upload Before Photos
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  @change="onBeforeFileChange($event, req)"
+                  class="block w-full text-sm text-gray-500"
+                />
+                <p class="text-xs text-gray-400 mt-1">
+                  At least one before photo is required.
+                </p>
+                <div v-if="uploadedBeforeFiles(req).length" class="mt-2 space-y-1">
+                  <div class="flex items-center justify-between">
+                    <p class="text-[11px] uppercase tracking-wide text-gray-400">Before Photos</p>
+                    <button
+                      type="button"
+                      class="text-[11px] font-semibold text-rose-600 hover:underline"
+                      @click="clearUploadedBeforeFiles(req)"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                  <ul class="space-y-1 text-xs text-gray-600">
+                    <li
+                      v-for="(file, idx) in uploadedBeforeFiles(req)"
+                      :key="`${req.id}-before-file-${idx}`"
+                      class="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2 py-1"
+                    >
+                      <span class="truncate">{{ file.name }}</span>
+                      <button
+                        type="button"
+                        class="shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
+                        @click="removeUploadedBeforeFile(req, idx)"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <button
+                type="button"
+                @click="markWorkInProgress(req)"
+                class="mt-3 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm"
+              >
+                Mark Work in Progress
+              </button>
+            </div>
+
+            <div v-if="showCompletionForm(req)">
             <div class="mb-3">
               <label class="block text-sm font-medium text-gray-700 mb-1">
-                Upload Proof Files
+                Upload After Photos
               </label>
               <input
                 type="file"
@@ -568,11 +635,11 @@
                 class="block w-full text-sm text-gray-500"
               />
               <p class="text-xs text-gray-400 mt-1">
-                You can upload multiple photos as proof.
+                Upload the final after photos before submitting the completion report.
               </p>
               <div v-if="uploadedFiles(req).length" class="mt-2 space-y-1">
                 <div class="flex items-center justify-between">
-                  <p class="text-[11px] uppercase tracking-wide text-gray-400">Selected Files</p>
+                  <p class="text-[11px] uppercase tracking-wide text-gray-400">After Photos</p>
                   <button
                     type="button"
                     class="text-[11px] font-semibold text-rose-600 hover:underline"
@@ -654,8 +721,9 @@
               @click="completeJob(req)"
               class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm"
             >
-              Complete Job with Proof
+              Status 3: Work Completed
             </button>
+            </div>
           </div>
 
           <div v-else-if="isStatus(req, 'in_progress') && !props.showCompleteJob" class="mt-4 text-slate-600 text-sm font-medium">
@@ -1349,6 +1417,16 @@ const prettyStatus = (status) => {
   return status || 'N/A'
 }
 
+const liveReportStage = (req) => String(req?.live_report_stage || '').trim().toLowerCase()
+const liveReportStageLabel = (req) => {
+  const stage = liveReportStage(req)
+  if (stage === 'arrived') return 'Status 1: Arrived at Location'
+  if (stage === 'work_in_progress') return 'Status 2: Work in Progress'
+  if (stage === 'completed') return 'Status 3: Work Completed'
+  if (normalizeStatus(req?.status) === 'job_ready') return 'Waiting for arrival confirmation'
+  return 'Preparing field update'
+}
+
 const normalizeStatus = (status) => {
   const s = String(status || '').toLowerCase()
   if (s === 'accepted') return 'approved'
@@ -1670,10 +1748,14 @@ onBeforeUnmount(() => {
   if (nowInterval) clearInterval(nowInterval)
 })
 
+const beforePhotosByRequest = reactive({})
 const photosByRequest = reactive({})
 const completionFieldsByRequest = reactive({})
 
+const uploadedBeforeFiles = (req) => beforePhotosByRequest[req.id] || []
 const uploadedFiles = (req) => photosByRequest[req.id] || []
+const showWorkInProgressForm = (req) => liveReportStage(req) !== 'work_in_progress' && liveReportStage(req) !== 'completed'
+const showCompletionForm = (req) => liveReportStage(req) === 'work_in_progress' || liveReportStage(req) === 'completed'
 const completionFields = (req) => {
   if (!completionFieldsByRequest[req.id]) {
     const now = new Date()
@@ -1686,6 +1768,29 @@ const completionFields = (req) => {
     }
   }
   return completionFieldsByRequest[req.id]
+}
+
+const onBeforeFileChange = (event, req) => {
+  const next = Array.from(event.target.files || [])
+  if (!next.length) return
+  const existing = beforePhotosByRequest[req.id] || []
+  beforePhotosByRequest[req.id] = [...existing, ...next]
+  event.target.value = ''
+}
+
+const removeUploadedBeforeFile = (req, index) => {
+  const existing = beforePhotosByRequest[req.id] || []
+  if (index < 0 || index >= existing.length) return
+  const next = existing.filter((_, i) => i !== index)
+  if (next.length) {
+    beforePhotosByRequest[req.id] = next
+  } else {
+    delete beforePhotosByRequest[req.id]
+  }
+}
+
+const clearUploadedBeforeFiles = (req) => {
+  delete beforePhotosByRequest[req.id]
 }
 
 const onFileChange = (event, req) => {
@@ -1747,11 +1852,38 @@ const startJob = async (req) => {
       status: 'in_progress',
       pre_job_materials_ready: true,
       pre_job_equipment_ready: true,
+      live_report_stage: 'arrived',
     })
-    Swal.fire('Started', 'Job is now in progress', 'success')
+    Swal.fire('Updated', 'Arrival status saved successfully.', 'success')
     emitRefresh()
   } catch (err) {
     Swal.fire('Error', err.response?.data?.message || 'Failed to start job', 'error')
+  }
+}
+
+const markWorkInProgress = async (req) => {
+  const beforePhotos = beforePhotosByRequest[req.id] || []
+  if (!beforePhotos.length) {
+    Swal.fire('Required', 'Please upload at least one before photo first.', 'warning')
+    return
+  }
+
+  const formData = new FormData()
+  beforePhotos.forEach((file) => formData.append('before_photos[]', file))
+  formData.append('status', 'in_progress')
+  formData.append('live_report_stage', 'work_in_progress')
+
+  try {
+    await axios.post(
+      `/service-provider/update-request/${req.id}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    Swal.fire('Updated', 'Work in progress status saved successfully.', 'success')
+    delete beforePhotosByRequest[req.id]
+    emitRefresh()
+  } catch (err) {
+    Swal.fire('Error', err.response?.data?.message || 'Failed to update the work-in-progress status.', 'error')
   }
 }
 
@@ -1790,7 +1922,8 @@ const completeJob = async (req) => {
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
-    Swal.fire('Success', 'Job completed!', 'success')
+    Swal.fire('Submitted', 'Completion report submitted. Operations will verify it before closing the job.', 'success')
+    delete beforePhotosByRequest[req.id]
     delete photosByRequest[req.id]
     delete completionFieldsByRequest[req.id]
     emitRefresh()

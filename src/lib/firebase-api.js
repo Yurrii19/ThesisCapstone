@@ -17,6 +17,7 @@ import {
   upsertStoredProfileCache,
   verifyRegistrationOtpCode,
 } from '@/lib/firebase-auth'
+import { queueLoggedOutToast } from '@/lib/app-toast'
 import { firebaseAuth, firebaseConfigReady, realtimeDb, storage } from '@/firebase/client'
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
 import { equalTo, get, orderByChild, push, query, ref as dbRef, remove, set, update } from 'firebase/database'
@@ -789,6 +790,38 @@ const syncEmployeeApprovalProfile = async (employee = {}, overrides = {}) => {
   }, existingProfile || {}, true)
 }
 
+const clearAdminProfileReferences = async (profileOrId, options = {}) => {
+  const normalizedProfile = typeof profileOrId === 'object' && profileOrId
+    ? normalizeAdminProfileRecord(profileOrId)
+    : null
+  const identity = normalizedProfile
+    ? (normalizedProfile?.uid || normalizedProfile?.id || normalizedProfile?.email)
+    : profileOrId
+
+  if (!identity) return true
+
+  const removeReviewRecords = options.removeReviewRecords !== false
+  const queueId = trimString(normalizedProfile?.uid || normalizedProfile?.id || identity)
+  const emailKey = normalizeEmailCandidate(normalizedProfile?.email)
+  const contactKey = trimString(normalizedProfile?.contact_number || '').replace(/\D/g, '')
+  const cleanupTargets = [
+    removeReviewRecords && queueId ? `app_data/admin_review_queue/${normalizeKey(queueId)}` : '',
+    removeReviewRecords && queueId ? `app_data/resubmissions/${normalizeKey(queueId)}` : '',
+    emailKey ? `email_index/${normalizeKey(emailKey)}` : '',
+    contactKey ? `contact_index/${normalizeKey(contactKey)}` : '',
+  ].filter(Boolean)
+
+  for (const target of cleanupTargets) {
+    try {
+      await remove(dbRef(realtimeDb, target))
+    } catch (error) {
+      if (!isFirebasePermissionError(error)) throw error
+    }
+  }
+
+  return true
+}
+
 const removeAdminProfile = async (profileOrId) => {
   removeStoredProfileCache(profileOrId)
   const normalizedProfile = typeof profileOrId === 'object' && profileOrId
@@ -806,25 +839,7 @@ const removeAdminProfile = async (profileOrId) => {
     if (!isFirebasePermissionError(error)) throw error
   }
 
-  const queueId = trimString(normalizedProfile?.uid || normalizedProfile?.id || identity)
-  const emailKey = normalizeEmailCandidate(normalizedProfile?.email)
-  const contactKey = trimString(normalizedProfile?.contact_number || '').replace(/\D/g, '')
-
-  const cleanupTargets = [
-    queueId ? `app_data/admin_review_queue/${normalizeKey(queueId)}` : '',
-    queueId ? `app_data/resubmissions/${normalizeKey(queueId)}` : '',
-    emailKey ? `email_index/${normalizeKey(emailKey)}` : '',
-    contactKey ? `contact_index/${normalizeKey(contactKey)}` : '',
-  ].filter(Boolean)
-
-  for (const target of cleanupTargets) {
-    try {
-      await remove(dbRef(realtimeDb, target))
-    } catch (error) {
-      if (!isFirebasePermissionError(error)) throw error
-    }
-  }
-
+  await clearAdminProfileReferences(normalizedProfile || identity)
   return true
 }
 
@@ -1996,6 +2011,27 @@ const notifyScopedRoleRecipients = async (scopeSource = {}, roles = [], title, m
   await Promise.all(recipients.map((recipientId) => notifyUser(recipientId, title, message, extra)))
   return recipients
 }
+const notifyRequestAssignee = async (request = {}, title, message, extra = {}) => {
+  const targets = new Set([
+    trimString(request?.team_leader_id),
+    trimString(request?.service_provider_id),
+    trimString(request?.assigned_provider_id),
+    trimString(request?.provider_id),
+    trimString(request?.employee_id),
+    trimString(request?.assigned_employee_id),
+  ].filter(Boolean))
+
+  await Promise.all([...targets].map((recipientId) => notifyUser(recipientId, title, message, extra)))
+  return [...targets]
+}
+const isWarrantyPriorityTicket = (request = {}) => {
+  const status = normalizeStatus(request?.status)
+  const workflowStage = normalizeStatus(request?.workflow_stage)
+  const warrantyStatus = normalizeStatus(request?.warranty_status)
+  return status === 'warranty_pending'
+    || workflowStage === 'warranty_priority_ticket'
+    || warrantyStatus === 'claimed'
+}
 const summarizeShortages = (shortages = []) => (
   shortages
     .filter((item) => item?.shortage)
@@ -2378,6 +2414,8 @@ const summarizeOperationalDashboard = async () => {
 }
 
 const listUsersForAdmin = async () => {
+  invalidateCollectionCache('resubmissions')
+  invalidateCollectionCache('admin_review_queue')
   const [profiles, resubmissions, employees, adminReviewQueue] = await Promise.all([
     listProfiles(),
     listCollection('resubmissions').catch(() => []),
@@ -2650,7 +2688,10 @@ const buildCsrDashboardData = async () => {
     || ''
   )
   const pendingIntake = requests.filter((row) =>
-    normalizeStatus(row.status) === 'pending' && normalizeStatus(row.workflow_stage) !== 'csr_forwarded'
+    (
+      (normalizeStatus(row.status) === 'pending' && normalizeStatus(row.workflow_stage) !== 'csr_forwarded')
+      || isWarrantyPriorityTicket(row)
+    )
   )
   const paymentQueue = requests.filter((row) => {
     const paymentGate = normalizeStatus(row.payment_gate_status || row.payment_status)
@@ -2674,12 +2715,18 @@ const buildCsrDashboardData = async () => {
       pending_intake: pendingIntake.length,
       forwarded_requests: forwardedQueue.length,
       pending_payment_gate: paymentQueue.length,
+      priority_tickets: requests.filter((row) => isWarrantyPriorityTicket(row)).length,
       residential: residentialCount,
       commercial: commercialCount,
     },
     intake_queue: requests.filter((row) =>
-      ['pending', 'submitted'].includes(normalizeStatus(row.status))
-      && normalizeStatus(row.workflow_stage) !== 'csr_forwarded'
+      (
+        (
+          ['pending', 'submitted'].includes(normalizeStatus(row.status))
+          && normalizeStatus(row.workflow_stage) !== 'csr_forwarded'
+        )
+        || isWarrantyPriorityTicket(row)
+      )
     ),
     payment_queue: paymentQueue,
     forwarded_queue: forwardedQueue,
@@ -3648,6 +3695,7 @@ const handleWrite = async (config, info) => {
   }
   if (source === '/force-logout' || source === '/logout') {
     await logoutWithFirebase()
+    queueLoggedOutToast()
     return { redirect: '/Auth/Login' }
   }
   if (source === '/check-email') {
@@ -3993,10 +4041,35 @@ const handleWrite = async (config, info) => {
       return { message: 'User not found.' }
     }
 
-    await removeAdminProfile(existing)
+    const deletedAt = nowIso()
+    const deletionReason = trimString(payload.reason || existing.rejection_reason || 'Wrong login email entered during admin account creation.')
+      || 'Wrong login email entered during admin account creation.'
+    const reviewMessage = `This account was removed from active use. Reason: ${deletionReason}. Update the correct account details and resubmit the application if access is still needed.`
+    const nextUser = await persistAdminProfile({
+      ...existing,
+      archived: true,
+      archived_at: deletedAt,
+      status: 'deleted',
+      approval_status: 'deleted',
+      is_approved: false,
+      has_viewed: false,
+      document_resubmitted_at: null,
+      rejection_reason: deletionReason,
+      latest_account_review_title: 'Account deleted',
+      latest_account_review_message: reviewMessage,
+      latest_account_review_kind: 'deleted',
+      latest_account_review_at: deletedAt,
+      latest_account_review_seen_at: null,
+    }, existing, true)
+    await clearAdminProfileReferences(nextUser)
+    await notifyUser(nextUser.uid || nextUser.id, 'Account deleted', reviewMessage, {
+      type: 'account_deleted',
+      reason: deletionReason,
+      archived: true,
+    })
     return {
-      message: 'Wrong-email account removed.',
-      user: existing,
+      message: 'Wrong-email account marked as deleted.',
+      user: nextUser,
     }
   }
 
@@ -4221,16 +4294,47 @@ const handleWrite = async (config, info) => {
 
   if (segments[0] === 'csr' && segments[1] === 'requests' && segments[2] && segments[3] === 'forward') {
     const requestId = trimString(segments[2])
+    const existing = await getRecord('service_requests', requestId)
+    const isWarrantyTicket = isWarrantyPriorityTicket(existing)
     const record = await patchRecord('service_requests', requestId, {
       status: 'pending',
-      workflow_stage: 'csr_forwarded',
+      workflow_stage: isWarrantyTicket ? 'warranty_priority_forwarded' : 'csr_forwarded',
       operations_stage: 'awaiting_operational_review',
       csr_status: 'validated',
       csr_forwarded_at: nowIso(),
       csr_validated_by: me?.uid || me?.id || null,
       csr_validated_by_name: adminUserName(me || {}),
       rejection_reason: null,
+      warranty_priority_ticket_status: isWarrantyTicket ? 'forwarded' : (existing?.warranty_priority_ticket_status || null),
     })
+    await notifyScopedRoleRecipients(
+      record,
+      ['operational', 'operational_management'],
+      isWarrantyTicket ? 'Priority warranty ticket forwarded' : 'CSR forwarded a request to Operations',
+      isWarrantyTicket
+        ? `CSR forwarded warranty ticket #${requestId} for urgent Operations review.`
+        : `CSR validated request #${requestId} and forwarded it to Operations.`,
+      {
+        category: 'operations',
+        type: isWarrantyTicket ? 'warranty_priority_forwarded' : 'csr_forwarded_to_operations',
+        request_id: requestId,
+        link: '/Operational/OperationalLiveQueue',
+      }
+    )
+    if (trimString(record?.user_id)) {
+      await notifyUser(
+        record.user_id,
+        isWarrantyTicket ? 'Warranty ticket forwarded' : 'Request forwarded to Operations',
+        isWarrantyTicket
+          ? 'CSR tagged your warranty claim as a priority ticket and forwarded it to Operations.'
+          : 'CSR validated your request and forwarded it to Operations.',
+        {
+          category: 'request_status',
+          type: isWarrantyTicket ? 'warranty_priority_forwarded' : 'request_forwarded_to_operations',
+          request_id: requestId,
+        }
+      )
+    }
     return { message: 'Request validated and forwarded to Operations.', data: record }
   }
 
@@ -4304,6 +4408,21 @@ const handleWrite = async (config, info) => {
         status: 'awaiting_material',
         workflow_stage: 'procurement_processing',
       })
+      await notifyScopedRoleRecipients(
+        { ...order, service_request_id: order.service_request_id },
+        ['operational', 'operational_management'],
+        approve ? 'Finance approved material funding' : 'Finance rejected material funding',
+        approve
+          ? `Finance approved ${trimString(order?.pr_reference || `PR-${orderId}`)}. Operations can wait for Procurement delivery before dispatch.`
+          : `Finance rejected ${trimString(order?.pr_reference || `PR-${orderId}`)}. Review the finance note, revise materials, or cancel the job.`,
+        {
+          category: 'operations',
+          type: approve ? 'finance_material_approved' : 'finance_material_rejected',
+          link: '/Operational/OperationalMaterialPlanning',
+          order_id: orderId,
+          request_id: order.service_request_id,
+        }
+      )
     }
     const orderScope = {
       ...order,
@@ -4340,6 +4459,7 @@ const handleWrite = async (config, info) => {
     if (!request) throw new Error('Service request not found.')
 
     const nextStatus = normalizeStatus(payload.status) || normalizeStatus(request.status) || 'assigned'
+    const liveReportStage = normalizeStatus(payload.live_report_stage)
     if (nextStatus === 'in_progress') {
       const materialsReady = parseBooleanFlag(payload.pre_job_materials_ready)
       const equipmentReady = parseBooleanFlag(payload.pre_job_equipment_ready)
@@ -4373,8 +4493,43 @@ const handleWrite = async (config, info) => {
       patch.pre_job_materials_ready = Boolean(payload.pre_job_materials_ready)
       patch.pre_job_equipment_ready = Boolean(payload.pre_job_equipment_ready)
     }
+    if (liveReportStage === 'arrived') {
+      patch.status = 'in_progress'
+      patch.workflow_stage = 'service_in_progress'
+      patch.live_report_stage = 'arrived'
+      patch.arrived_at = trimString(payload.arrival_time) || nowIso()
+      patch.field_status_label = 'arrived_at_location'
+    }
+    if (liveReportStage === 'work_in_progress') {
+      const beforePhotos = await uploadArtifacts('service-request-proofs', 'before-proof', toFileArray(payload['before_photos[]'] || payload.before_photos))
+      if (!beforePhotos.length) {
+        throw new Error('Upload at least one before photo before marking the work as in progress.')
+      }
+      patch.status = 'in_progress'
+      patch.workflow_stage = 'service_in_progress'
+      patch.live_report_stage = 'work_in_progress'
+      patch.work_started_at = trimString(payload.work_started_at) || nowIso()
+      patch.field_status_label = 'work_in_progress'
+      patch.live_report_before_files = beforePhotos
+    }
 
     const record = await patchRecord('service_requests', requestId, patch)
+    if (trimString(record?.user_id)) {
+      if (liveReportStage === 'arrived') {
+        await notifyUser(record.user_id, 'Team arrived on site', 'Your assigned team has arrived at the location and is preparing to start the job.', {
+          category: 'request_status',
+          type: 'team_arrived',
+          request_id: requestId,
+        })
+      }
+      if (liveReportStage === 'work_in_progress') {
+        await notifyUser(record.user_id, 'Work in progress', 'Your assigned team has started the work and uploaded before-service photos.', {
+          category: 'request_status',
+          type: 'work_in_progress',
+          request_id: requestId,
+        })
+      }
+    }
     return { message: 'Request updated successfully.', status: record?.status || nextStatus, data: record }
   }
 
@@ -4385,6 +4540,9 @@ const handleWrite = async (config, info) => {
     const requestStatus = normalizeStatus(request.status)
     if (requestStatus !== 'in_progress') {
       throw new Error('Job can only be completed while it is in progress.')
+    }
+    if (!['work_in_progress', 'completed'].includes(normalizeStatus(request?.live_report_stage))) {
+      throw new Error('Update the live report to Work in Progress first before completing the job.')
     }
     const isWarrantyRepair = Boolean(request?.warranty_free_service)
 
@@ -4408,29 +4566,36 @@ const handleWrite = async (config, info) => {
     const record = await patchRecord('service_requests', requestId, {
       status: 'completed',
       workflow_stage: 'completed',
+      operations_stage: 'completion_review_pending',
       completed_at: completedAt,
       completion_files: completionFiles,
+      live_report_stage: 'completed',
+      live_report_after_files: completionFiles,
       materials_used: materialsUsed,
       equipment_condition: equipmentCondition,
       inspection_result: inspectionResult,
-      warranty_status: 'active',
-      warranty_started_at: completedAt,
-      warranty_expires_at: addDaysIso(14),
+      completion_review_status: 'pending',
+      completion_review_requested_at: nowIso(),
+      completion_review_requested_by: request?.team_leader_id || request?.service_provider_id || me?.uid || me?.id || null,
+      warranty_status: 'pending_activation',
+      warranty_started_at: null,
+      warranty_expires_at: null,
     })
     await maybeCreatePerJobPayroll(record || request)
-    if (trimString(record?.user_id)) {
-      await notifyUser(
-        record.user_id,
-        'Service completed',
-        isWarrantyRepair
-          ? 'Your warranty repair was completed at no additional charge and warranty is active again.'
-          : 'Your request was completed and warranty is now active.',
-        {
-        category: 'request_status',
-        type: 'request_completed',
-        }
-      )
-    }
+    await notifyScopedRoleRecipients(
+      record,
+      ['operational', 'operational_management'],
+      'Completion report ready for review',
+      isWarrantyRepair
+        ? `Warranty repair for request #${requestId} was completed and is waiting for Operations final verification.`
+        : `Request #${requestId} was marked complete by the field team and is waiting for Operations final verification.`,
+      {
+        category: 'operations',
+        type: 'completion_review_pending',
+        request_id: requestId,
+        link: '/Operational/OperationalLiveQueue',
+      }
+    )
     return { message: 'Job completed successfully.', data: record }
   }
 
@@ -4464,6 +4629,21 @@ const handleWrite = async (config, info) => {
     let nextRequest = null
     if (trimString(order?.service_request_id)) {
       nextRequest = await refreshRequestMaterialReadiness(order.service_request_id)
+      if (nextRequest && normalizeStatus(nextRequest.status) === 'job_ready') {
+        await notifyScopedRoleRecipients(
+          { ...order, ...nextRequest },
+          ['operational', 'operational_management'],
+          'Materials ready for dispatch',
+          `Request #${order.service_request_id} now has enough stock and is ready for dispatch planning.`,
+          {
+            category: 'operations',
+            type: 'materials_ready_for_dispatch',
+            request_id: order.service_request_id,
+            order_id: orderId,
+            link: '/Operational/OperationalLiveQueue',
+          }
+        )
+      }
     }
 
     return {
@@ -4512,6 +4692,19 @@ const handleWrite = async (config, info) => {
           type: 'request_shortage',
           link: '/Procurement/ProcurementDashboard?section=requests',
           request_id: requestId,
+        }
+      )
+    } else {
+      await notifyScopedRoleRecipients(
+        { ...request, ...record },
+        ['operational', 'operational_management'],
+        'Materials ready for dispatch',
+        `Request #${requestId} is now job ready and can move to dispatch.`,
+        {
+          category: 'operations',
+          type: 'materials_ready_for_dispatch',
+          request_id: requestId,
+          link: '/Operational/OperationalLiveQueue',
         }
       )
     }
@@ -4704,6 +4897,21 @@ const handleWrite = async (config, info) => {
     let nextRequest = null
     if (trimString(order?.service_request_id)) {
       nextRequest = await refreshRequestMaterialReadiness(order.service_request_id)
+      if (nextRequest && normalizeStatus(nextRequest.status) === 'job_ready') {
+        await notifyScopedRoleRecipients(
+          { ...order, ...nextRequest },
+          ['operational', 'operational_management'],
+          'Direct purchase completed',
+          `Request #${order.service_request_id} is now job ready after Procurement completed the direct purchase.`,
+          {
+            category: 'operations',
+            type: 'materials_ready_for_dispatch',
+            request_id: order.service_request_id,
+            order_id: orderId,
+            link: '/Operational/OperationalLiveQueue',
+          }
+        )
+      }
     }
     return {
       message: nextRequest && normalizeStatus(nextRequest.status) === 'job_ready'
@@ -4950,12 +5158,27 @@ const handleWrite = async (config, info) => {
       },
       warranty_status: 'claimed',
       status: 'warranty_pending',
-      workflow_stage: 'warranty_handling',
+      workflow_stage: 'warranty_priority_ticket',
       operations_stage: 'warranty_review_pending',
+      warranty_priority_ticket_status: 'pending',
+      priority: 'high',
       warranty_review_status: 'pending',
       warranty_free_service: false,
       notes: `${trimString(existing?.notes)} [WARRANTY_CLAIM:${claimTimestamp}]`.trim(),
     })
+    await notifyScopedRoleRecipients(
+      record,
+      ['csr'],
+      'Priority warranty ticket',
+      `A customer filed a warranty claim for request #${id}. Review it as a priority CSR ticket.`,
+      {
+        category: 'csr',
+        type: 'warranty_priority_ticket',
+        request_id: id,
+        priority: 'high',
+        link: '/CSR/Dashboard',
+      }
+    )
     return { message: 'Warranty claim submitted successfully.', data: record }
   }
 
@@ -5046,6 +5269,9 @@ const handleWrite = async (config, info) => {
     const dispatchEmployeeRoles = Array.isArray(payload.dispatch_employee_roles)
       ? payload.dispatch_employee_roles.map((value) => trimString(value)).filter(Boolean)
       : []
+    if (dispatchEmployeeIds.length !== 3) {
+      throw new Error('Dispatch team must contain exactly 3 personnel: 1 team leader and 2 technicians.')
+    }
     const nextPatch = {
       employee_id: trimString(payload.employee_id || payload.assigned_employee_id) || trimString(existing?.employee_id || existing?.assigned_employee_id) || null,
       assigned_employee_id: trimString(payload.assigned_employee_id || payload.employee_id) || trimString(existing?.assigned_employee_id || existing?.employee_id) || null,
@@ -5075,6 +5301,11 @@ const handleWrite = async (config, info) => {
     }
 
     const record = await patchRecord('service_requests', id, nextPatch)
+    await Promise.all(dispatchEmployeeIds.map((recipientId) => notifyUser(recipientId, 'Dispatch assignment received', `You were assigned to dispatch for request #${id}. Check your dashboard for the job details.`, {
+      category: 'assignment',
+      type: 'dispatch_assignment',
+      request_id: id,
+    })))
     return { message: 'Dispatch team assigned and request moved to materials coordination.', data: record }
   }
 
@@ -5123,6 +5354,80 @@ const handleWrite = async (config, info) => {
         ? 'Materials plan saved. Procurement was notified and draft PR entries were prepared for missing stock.'
         : 'Materials plan saved. Stock was reserved and the request is now job ready.',
       requires_procurement: requiresProcurement,
+      data: record,
+    }
+  }
+
+  if (segments[0] === 'operational' && segments[1] === 'service-requests' && segments[2] && segments[3] === 'final-review') {
+    const requestId = trimString(segments[2])
+    const existing = await getRecord('service_requests', requestId)
+    if (!existing) throw new Error('Service request not found.')
+    if (normalizeStatus(existing?.status) !== 'completed') {
+      throw new Error('Only completed jobs can be reviewed for final closure.')
+    }
+
+    const approve = normalizeStatus(payload.action) !== 'reject'
+    const reviewTimestamp = nowIso()
+    const reason = trimString(payload.reason) || null
+    const nextPatch = approve
+      ? {
+          completion_review_status: 'approved',
+          completion_review_reason: null,
+          completion_reviewed_at: reviewTimestamp,
+          completion_reviewed_by: me?.uid || me?.id || null,
+          completion_reviewed_by_name: adminUserName(me || {}),
+          operations_stage: 'job_closed',
+          closed_at: reviewTimestamp,
+          warranty_status: 'active',
+          warranty_started_at: trimString(existing?.completed_at) || reviewTimestamp,
+          warranty_expires_at: addDaysIso(14),
+        }
+      : {
+          status: 'in_progress',
+          workflow_stage: 'service_in_progress',
+          operations_stage: 'completion_review_rejected',
+          completion_review_status: 'rejected',
+          completion_review_reason: reason,
+          completion_reviewed_at: reviewTimestamp,
+          completion_reviewed_by: me?.uid || me?.id || null,
+          completion_reviewed_by_name: adminUserName(me || {}),
+          closed_at: null,
+          last_completion_attempt_at: trimString(existing?.completed_at) || reviewTimestamp,
+          completed_at: null,
+          warranty_status: 'none',
+          warranty_started_at: null,
+          warranty_expires_at: null,
+          live_report_stage: 'work_in_progress',
+        }
+    const record = await patchRecord('service_requests', requestId, nextPatch)
+    if (trimString(record?.user_id)) {
+      await notifyUser(
+        record.user_id,
+        approve ? 'Service completed' : 'Operations requested rework',
+        approve
+          ? 'Operations closed your job successfully. Your 2-week warranty is now active.'
+          : `Operations rejected the completion report and requested fixes before closing the job.${reason ? ` Reason: ${reason}` : ''}`,
+        {
+          category: 'request_status',
+          type: approve ? 'request_closed' : 'completion_rework_requested',
+          request_id: requestId,
+        }
+      )
+    }
+    await notifyRequestAssignee(
+      { ...existing, ...record },
+      approve ? 'Job closed by Operations' : 'Completion report rejected',
+      approve
+        ? `Operations approved the final report for request #${requestId}.`
+        : `Operations rejected the final report for request #${requestId}.${reason ? ` Reason: ${reason}` : ''}`,
+      {
+        category: 'operations',
+        type: approve ? 'job_closed' : 'completion_rejected',
+        request_id: requestId,
+      }
+    )
+    return {
+      message: approve ? 'Job closed and warranty activated.' : 'Completion rejected and request returned to the field team.',
       data: record,
     }
   }
@@ -5947,6 +6252,8 @@ const handleWrite = async (config, info) => {
       nextProfile.approval_status = 'pending'
       nextProfile.is_approved = false
       nextProfile.has_viewed = false
+      nextProfile.rejection_reason = null
+      nextProfile.rejection_checklist = []
       nextProfile.document_resubmitted_at = profileUpdateTimestamp
       nextProfile.latest_account_review_title = 'Documents resubmitted'
       nextProfile.latest_account_review_message = `Your updated documents were submitted for review: ${updatedDocumentFields.map(humanizeChecklistValue).join(', ')}.`

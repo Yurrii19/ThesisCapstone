@@ -1020,6 +1020,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } 
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from '@/lib/sweetalert-toast-shim'
+import { queueAppToast } from '@/lib/app-toast'
 import L from 'leaflet'
 import { CAVITE_BARANGAYS_BY_CODE } from '@/data/caviteBarangaysFallback'
 
@@ -1033,7 +1034,7 @@ const props = defineProps({
     default: false,
   },
 })
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'submitted'])
 
 const labelClass = computed(() => (
   props.embedded
@@ -2801,15 +2802,6 @@ const submitRequest = async () => {
     return Swal.fire('Validation', 'Requests with 10 or more truckloads require the 30% down payment flow.', 'warning')
   }
 
-  try {
-    await axios.post('/user/profile', {
-      _method: 'PUT',
-      contact_number: form.contact_number,
-    }, { skipGlobalLoading: true })
-  } catch {
-    // Best effort: continue with request submission.
-  }
-
   const downpaymentAmount = isDownpaymentSelected.value
     ? Number(form.downpayment_amount || suggestedDownpaymentAmount.value || 0)
     : null
@@ -2821,6 +2813,13 @@ const submitRequest = async () => {
       return Swal.fire('Validation', 'Downpayment must be lower than total service amount.', 'warning')
     }
   }
+
+  const syncProfileRequest = axios.post('/user/profile', {
+    _method: 'PUT',
+    contact_number: form.contact_number,
+  }, { skipGlobalLoading: true }).catch(() => {
+    // Best effort: continue with request submission.
+  })
 
   const companyMetaTags = [
     isCommercialProperty.value && form.client_company_name
@@ -2857,6 +2856,20 @@ const submitRequest = async () => {
     `Brgy. ${form.barangay}`,
     `${form.city}, Cavite ${form.zip_code}`,
   ].filter(Boolean).join(', ')
+  const submittedPayload = {
+    service_type: form.service_type,
+    address_text: addressText,
+    contact_number: form.contact_number,
+    notes: composedNotes,
+    preferred_date: form.preferred_date,
+    preferred_time: to24Hour(form.service_time),
+    payment_method: form.payment_method,
+    total_amount: amount,
+  }
+  const selectedTeam = {
+    ...props.teamContext,
+    team: teamLabel.value,
+  }
 
   const payload = new FormData()
   payload.append('business_id', currentBusinessId.value)
@@ -2910,18 +2923,36 @@ const submitRequest = async () => {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     const submitted = res?.data || {}
+    const submittedMessage = submitted.message || 'Service request submitted.'
     if (submitted.invoice_url) {
+      queueAppToast({
+        type: 'success',
+        message: submittedMessage,
+        timeout: 2200,
+      })
       window.location.assign('/User/UserDashboard?section=bookingRequest')
       return
     }
-    await Swal.fire('Success', submitted.message || 'Service request submitted.', 'success')
     if (props.embedded) {
-      emit('close')
+      emit('submitted', {
+        request: submitted,
+        submittedPayload,
+        selectedTeam,
+        message: submittedMessage,
+      })
+      return
     }
+    queueAppToast({
+      type: 'success',
+      message: submittedMessage,
+      timeout: 2200,
+    })
+    router.visit('/user/dashboard?section=bookingRequest')
   } catch (err) {
     Swal.fire('Error', err?.response?.data?.error || 'Failed to submit request.', 'error')
   } finally {
     submitting.value = false
+    void syncProfileRequest
   }
 }
 

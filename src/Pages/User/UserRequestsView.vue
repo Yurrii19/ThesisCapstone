@@ -40,15 +40,15 @@
           v-for="req in visibleRequests"
           :key="req.id"
           class="bg-white p-5 rounded-2xl shadow-md border border-gray-100 border-l-4"
-          :class="cardAccentClass(req.status)"
+          :class="cardAccentClass(req)"
         >
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-xs uppercase tracking-wide text-gray-400">Business</p>
               <p class="text-lg font-semibold text-gray-800 leading-tight">{{ businessName(req) }}</p>
             </div>
-            <span class="px-2.5 py-1 rounded-full text-xs font-semibold capitalize" :class="statusClass(req.status)">
-              {{ prettyStatus(req.status) }}
+            <span class="px-2.5 py-1 rounded-full text-xs font-semibold capitalize" :class="statusClass(req)">
+              {{ prettyStatus(req) }}
             </span>
           </div>
 
@@ -97,10 +97,10 @@
               <p class="text-xs font-semibold tracking-wide text-slate-500 uppercase">Request Journey</p>
               <div class="flex items-center gap-2">
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white border border-slate-200 text-slate-600">
-                  Step {{ userCurrentStep(req.status) }}/{{ userTotalSteps(req.status) }}
+                  Step {{ userCurrentStep(req) }}/{{ userTotalSteps(req) }}
                 </span>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold" :class="statusClass(req.status)">
-                  {{ userProgressPercent(req.status) }}%
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold" :class="statusClass(req)">
+                  {{ userProgressPercent(req) }}%
                 </span>
               </div>
             </div>
@@ -109,15 +109,15 @@
               <div class="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden ring-1 ring-slate-200/70">
                 <div
                   class="h-full rounded-full transition-all duration-500"
-                  :class="userProgressBarClass(req.status)"
-                  :style="{ width: `${userProgressPercent(req.status)}%` }"
+                  :class="userProgressBarClass(req)"
+                  :style="{ width: `${userProgressPercent(req)}%` }"
                 ></div>
               </div>
             </div>
 
             <div class="flex flex-wrap gap-2">
               <span
-                v-for="step in userTimeline(req.status)"
+                v-for="step in userTimeline(req)"
                 :key="`${req.id}-${step.key}`"
                 class="px-2.5 py-1 rounded-full text-[11px] font-semibold"
                 :class="timelineClass(step.state)"
@@ -199,11 +199,21 @@ const visibleRequests = computed(() =>
   (props.requests || []).filter((r) => !r?.archived_at)
 )
 
+const isCompletionReviewPending = (req) => (
+  String(req?.status || '').trim().toLowerCase() === 'completed'
+  && String(req?.completion_review_status || '').trim().toLowerCase() === 'pending'
+)
+
 const stats = computed(() => {
   const rows = visibleRequests.value
   const total = rows.length
-  const active = rows.filter((r) => !['rejected', 'cancelled', 'completed'].includes(String(r.status || '').toLowerCase())).length
-  const completed = rows.filter((r) => String(r.status || '').toLowerCase() === 'completed').length
+  const active = rows.filter((r) => {
+    const status = String(r.status || '').toLowerCase()
+    if (['rejected', 'cancelled'].includes(status)) return false
+    if (status === 'completed' && !isCompletionReviewPending(r)) return false
+    return true
+  }).length
+  const completed = rows.filter((r) => String(r.status || '').toLowerCase() === 'completed' && !isCompletionReviewPending(r)).length
   return { total, active, completed }
 })
 
@@ -276,22 +286,26 @@ const paymentStatusLabel = (req) => {
   return 'Unpaid'
 }
 
-const prettyStatus = (status) => {
-  const s = String(status || '').toLowerCase()
+const prettyStatus = (input) => {
+  const req = input && typeof input === 'object' ? input : null
+  const s = String(req?.status ?? input ?? '').toLowerCase()
   if (s === 'pending') return 'Pending'
   if (s === 'approved' || s === 'accepted') return 'Approved'
   if (s === 'assigned') return 'Awaiting Provider Acceptance'
   if (s === 'awaiting_material') return 'Awaiting Materials'
   if (s === 'job_ready') return 'Ready for Dispatch'
   if (s === 'in_progress' || s === 'ongoing') return 'Work in Progress'
+  if (s === 'completed' && isCompletionReviewPending(req)) return 'Awaiting OM Verification'
   if (s === 'completed') return 'Completed'
   if (s === 'rejected') return 'Rejected'
   if (s === 'cancelled') return 'Cancelled'
-  return status || 'Unknown'
+  return req?.status || input || 'Unknown'
 }
 
-const statusClass = (status) => {
-  const s = String(status || '').toLowerCase()
+const statusClass = (input) => {
+  const req = input && typeof input === 'object' ? input : null
+  const s = String(req?.status ?? input ?? '').toLowerCase()
+  if (s === 'completed' && isCompletionReviewPending(req)) return 'bg-sky-50 text-sky-700'
   return {
     pending: 'bg-amber-50 text-amber-700',
     approved: 'bg-emerald-50 text-emerald-700',
@@ -307,10 +321,12 @@ const statusClass = (status) => {
   }[s] || 'bg-gray-100 text-gray-700'
 }
 
-const cardAccentClass = (status) => {
-  const s = String(status || '').toLowerCase()
+const cardAccentClass = (input) => {
+  const req = input && typeof input === 'object' ? input : null
+  const s = String(req?.status ?? input ?? '').toLowerCase()
   if (s === 'rejected') return 'border-l-rose-500'
   if (s === 'cancelled') return 'border-l-slate-400'
+  if (s === 'completed' && isCompletionReviewPending(req)) return 'border-l-sky-500'
   if (s === 'completed') return 'border-l-emerald-500'
   if (s === 'in_progress' || s === 'ongoing') return 'border-l-indigo-500'
   if (s === 'awaiting_material') return 'border-l-orange-500'
@@ -348,8 +364,9 @@ const timeAgo = (value) => {
   return `${days} day${days > 1 ? 's' : ''} ago`
 }
 
-const normalizeRequestStatus = (status) => {
-  const s = String(status || '').toLowerCase()
+const normalizeRequestStatus = (input) => {
+  const req = input && typeof input === 'object' ? input : null
+  const s = String(req?.status ?? input ?? '').toLowerCase()
   if (s === 'accepted') return 'approved'
   if (s === 'ongoing') return 'in_progress'
   return s
@@ -368,8 +385,8 @@ const userStatusLabel = {
   cancelled: 'Cancelled'
 }
 
-const userTimeline = (status) => {
-  const current = normalizeRequestStatus(status)
+const userTimeline = (input) => {
+  const current = normalizeRequestStatus(input)
   if (current === 'rejected' || current === 'cancelled') {
     return [
       { key: 'pending', label: userStatusLabel.pending, state: 'done' },
@@ -377,7 +394,7 @@ const userTimeline = (status) => {
     ]
   }
   const idx = userStatusFlow.indexOf(current)
-  if (idx === -1) return [{ key: current || 'unknown', label: prettyStatus(status), state: 'current' }]
+  if (idx === -1) return [{ key: current || 'unknown', label: prettyStatus(input), state: 'current' }]
   return userStatusFlow.map((key, i) => ({
     key,
     label: userStatusLabel[key] || key,
@@ -385,29 +402,31 @@ const userTimeline = (status) => {
   }))
 }
 
-const userProgressPercent = (status) => {
-  const current = normalizeRequestStatus(status)
+const userProgressPercent = (input) => {
+  const current = normalizeRequestStatus(input)
   if (current === 'rejected' || current === 'cancelled') return 100
   const idx = userStatusFlow.indexOf(current)
   if (idx === -1) return 0
   return Math.round(((idx + 1) / userStatusFlow.length) * 100)
 }
 
-const userCurrentStep = (status) => {
-  const current = normalizeRequestStatus(status)
+const userCurrentStep = (input) => {
+  const current = normalizeRequestStatus(input)
   if (current === 'rejected' || current === 'cancelled') return 2
   const idx = userStatusFlow.indexOf(current)
   return idx === -1 ? 1 : (idx + 1)
 }
 
-const userTotalSteps = (status) => {
-  const current = normalizeRequestStatus(status)
+const userTotalSteps = (input) => {
+  const current = normalizeRequestStatus(input)
   if (current === 'rejected' || current === 'cancelled') return 2
   return userStatusFlow.length
 }
 
-const userProgressBarClass = (status) => {
-  const s = normalizeRequestStatus(status)
+const userProgressBarClass = (input) => {
+  const req = input && typeof input === 'object' ? input : null
+  const s = normalizeRequestStatus(input)
+  if (s === 'completed' && isCompletionReviewPending(req)) return 'bg-sky-500'
   if (s === 'rejected') return 'bg-rose-500'
   if (s === 'cancelled') return 'bg-slate-500'
   if (s === 'completed') return 'bg-emerald-500'
@@ -428,6 +447,7 @@ const timelineClass = (state) => {
 const isArchivable = (req) => {
   if (!req || req.archived_at) return false
   const s = String(req.status || '').trim().toLowerCase()
+  if (s === 'completed' && isCompletionReviewPending(req)) return false
   return ['completed', 'cancelled', 'rejected'].includes(s)
 }
 

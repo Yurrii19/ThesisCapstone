@@ -704,6 +704,8 @@ const toast = (typeof window !== 'undefined' && window.__appFeedbackToast)
   || createToastInterface({
     position: POSITION.TOP_RIGHT,
     timeout: 2200,
+    closeButton: 'button',
+    showCloseButtonOnHover: false,
   })
 if (typeof window !== 'undefined' && !window.__appFeedbackToast) {
   window.__appFeedbackToast = toast

@@ -255,6 +255,9 @@
 
                   <div class="flex shrink-0 flex-col items-end gap-2">
                     <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">CSR Intake</span>
+                    <span v-if="isWarrantyPriorityTicket(item)" class="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+                      Priority Ticket
+                    </span>
                     <span class="rounded-full px-3 py-1 text-xs font-semibold" :class="paymentGateClass(item.payment_gate_status)">
                       {{ item.payment_gate_status }}
                     </span>
@@ -262,7 +265,9 @@
                 </div>
 
                 <p class="mt-5 text-sm leading-7 text-slate-600">
-                  Review the interview answers, request setup, and payment rule before forwarding this request to Operations.
+                  {{ isWarrantyPriorityTicket(item)
+                    ? 'Customer filed a warranty claim within the active coverage window. Review the ticket as priority visibility for CSR and coordinate the next handoff.'
+                    : 'Review the interview answers, request setup, and payment rule before forwarding this request to Operations.' }}
                 </p>
 
                 <p class="mt-3 text-sm text-slate-500">
@@ -325,6 +330,7 @@
                 <div class="flex items-start gap-2">
                   <div class="hidden flex-wrap justify-end gap-2 sm:flex">
                     <span class="rounded-full bg-cyan-100 px-3 py-1 text-xs font-semibold text-cyan-800">Request #{{ selectedIntakeRequest.id }}</span>
+                    <span v-if="isWarrantyPriorityTicket(selectedIntakeRequest)" class="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">Priority Ticket</span>
                     <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">{{ csrStageLabel(selectedIntakeRequest) }}</span>
                     <span class="rounded-full px-3 py-1 text-xs font-semibold" :class="paymentGateClass(selectedIntakeRequest.payment_gate_status)">
                       {{ selectedIntakeRequest.payment_gate_status }}
@@ -425,9 +431,13 @@
 
                   <div class="rounded-[24px] border border-cyan-200 bg-[linear-gradient(180deg,#ffffff_0%,#f7fdff_100%)] px-4 py-4 shadow-[0_18px_34px_-32px_rgba(8,145,178,0.3)]">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Final CSR Decision</p>
-                    <h5 class="mt-2 text-lg font-black tracking-[-0.02em] text-slate-900">Choose the final intake decision</h5>
+                    <h5 class="mt-2 text-lg font-black tracking-[-0.02em] text-slate-900">
+                      {{ isWarrantyPriorityTicket(selectedIntakeRequest) ? 'Priority warranty visibility' : 'Choose the final intake decision' }}
+                    </h5>
                     <p class="mt-2 text-sm leading-7 text-slate-600">
-                      Approve this request when the intake interview, submitted details, and payment rule all match. Reject it only when the request cannot proceed and provide a clear reason.
+                      {{ isWarrantyPriorityTicket(selectedIntakeRequest)
+                        ? 'This ticket came from a warranty claim and is surfaced back to CSR as a priority item. Use the dashboard for visibility and coordination while the warranty flow continues.'
+                        : 'Approve this request when the intake interview, submitted details, and payment rule all match. Reject it only when the request cannot proceed and provide a clear reason.' }}
                     </p>
 
                     <div class="mt-4 grid gap-3 sm:grid-cols-3">
@@ -445,7 +455,7 @@
                       </div>
                     </div>
 
-                    <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div v-if="!isWarrantyPriorityTicket(selectedIntakeRequest)" class="mt-4 grid gap-3 sm:grid-cols-2">
                       <button
                         type="button"
                         class="rounded-[18px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -466,7 +476,9 @@
                     </div>
 
                     <p class="mt-3 text-xs leading-6 text-slate-500">
-                      Approve goes directly to Operations. Reject requires a reason and sends the request back as rejected.
+                      {{ isWarrantyPriorityTicket(selectedIntakeRequest)
+                        ? 'Priority warranty tickets stay visible here so CSR can monitor and coordinate the customer follow-up.'
+                        : 'Approve goes directly to Operations. Reject requires a reason and sends the request back as rejected.' }}
                     </p>
                   </div>
                 </div>
@@ -761,6 +773,16 @@ function csrStageLabel(item) {
   if (pricingStage === 'pricing_pending_procurement') return 'Pricing Waiting On Procurement'
   if (operationsStage === 'awaiting_operational_review') return 'Awaiting Operational Review'
   return prettyValue(workflowStage || operationsStage || procurementStage || pricingStage, 'In Workflow')
+}
+
+function isWarrantyPriorityTicket(item) {
+  const status = String(item?.status || '').trim().toLowerCase()
+  const workflowStage = String(item?.workflow_stage || '').trim().toLowerCase()
+  const warrantyStatus = String(item?.warranty_status || '').trim().toLowerCase()
+  return status === 'warranty_pending'
+    || workflowStage === 'warranty_priority_ticket'
+    || workflowStage === 'warranty_priority_forwarded'
+    || warrantyStatus === 'claimed'
 }
 
 function applyDashboardPayload(payload = {}) {

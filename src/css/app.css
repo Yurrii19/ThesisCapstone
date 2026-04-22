@@ -10,6 +10,17 @@
 }
 
 @layer components {
+  .Vue-Toastification__close-button {
+    opacity: 1 !important;
+    color: currentColor !important;
+  }
+
+  .Vue-Toastification__close-button:hover,
+  .Vue-Toastification__close-button:focus {
+    opacity: 1 !important;
+    color: currentColor !important;
+  }
+
   .employee-view-only .hr-content button,
   .employee-view-only .hr-content [role='button'] {
     pointer-events: none;

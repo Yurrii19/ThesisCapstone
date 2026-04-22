@@ -170,6 +170,7 @@ export function useOperationalData() {
 
   const nextFlowAction = (item) => {
     const requestStatus = String(item?.status || '').toLowerCase().trim()
+    const completionReviewStatus = String(item?.completion_review_status || '').toLowerCase().trim()
     const workflowStage = String(item?.workflow_stage || '').toLowerCase().trim()
     const operationsStage = String(item?.operations_stage || '').toLowerCase().trim()
     const stockStage = String(item?.stock_status || '').toLowerCase().trim()
@@ -179,6 +180,9 @@ export function useOperationalData() {
     const paymentStatus = String(item?.payment_status || '').toLowerCase().trim()
     const prStatuses = Array.isArray(item?.pr_statuses) ? item.pr_statuses.map((s) => String(s || '').toLowerCase()) : []
 
+    if (requestStatus === 'completed' && completionReviewStatus === 'pending') {
+      return 'Review the submitted completion report, approve it to close the job, or reject it and return the request to the field team.'
+    }
     if (requestStatus === 'completed' && item?.warranty_free_service) return 'Warranty repair is completed at no additional charge and the warranty has been refreshed.'
     if (requestStatus === 'completed') return 'Verify completion, close the request, and confirm that the warranty is already active.'
     if (requestStatus === 'warranty_pending') return 'Review the warranty claim, inspect the reported issue, and decide whether the job should reopen at no charge.'
@@ -737,6 +741,57 @@ export function useOperationalData() {
     await confirmAndLogout()
   }
 
+  const finalReview = async (item, action = 'approve') => {
+    const approve = String(action || '').toLowerCase() !== 'reject'
+    let reason = null
+
+    if (approve) {
+      const confirm = await Swal.fire({
+        title: 'Close this job?',
+        text: `Request #${item.id} will be closed and the 2-week warranty will start immediately.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Close Job',
+      })
+      if (!confirm.isConfirmed) return false
+    } else {
+      const prompt = await Swal.fire({
+        title: 'Reject completion report?',
+        text: 'Explain what still needs to be fixed before the team leaves the site.',
+        input: 'textarea',
+        inputPlaceholder: 'Reason for rework',
+        showCancelButton: true,
+        confirmButtonText: 'Reject Report',
+        inputValidator: (value) => {
+          if (!String(value || '').trim()) return 'Reason is required.'
+          return null
+        },
+      })
+      if (!prompt.isConfirmed) return false
+      reason = String(prompt.value || '').trim()
+    }
+
+    workingRequestId.value = item.id
+    try {
+      const res = await axios.post(`/operational/service-requests/${item.id}/final-review`, {
+        action: approve ? 'approve' : 'reject',
+        reason,
+      }, { skipGlobalLoading: true })
+      Swal.fire(
+        approve ? 'Job Closed' : 'Rework Requested',
+        res?.data?.message || (approve ? 'Job closed successfully.' : 'Completion report was rejected.'),
+        approve ? 'success' : 'info'
+      )
+      fetchDashboard().catch(() => {})
+      return true
+    } catch (err) {
+      Swal.fire('Error', err?.response?.data?.message || 'Failed to save the final review.', 'error')
+      return false
+    } finally {
+      workingRequestId.value = null
+    }
+  }
+
   return {
     loading,
     workingRequestId,
@@ -758,6 +813,7 @@ export function useOperationalData() {
     requestMetaChips,
     fetchDashboard,
     reviewRequest,
+    finalReview,
     assignTeamEquipment,
     planMaterials,
     archiveRequest,

@@ -81,6 +81,15 @@
                               Assign Team
                             </button>
                             <button type="button" class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="selectedRequest = item">View Details</button>
+                            <button
+                              v-if="canReviewCompletion(item)"
+                              type="button"
+                              class="rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              :disabled="workingRequestId === item.id"
+                              @click="selectedRequest = item"
+                            >
+                              Final Review
+                            </button>
                             <button v-if="item.can_assign || item.can_plan_materials || item.can_review" type="button" class="rounded-full bg-gradient-to-r from-sky-500 to-cyan-500 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" :disabled="workingRequestId === item.id" @click="openMaterialWorkflow(item)">{{ operationsActionLabel(item) }}</button>
                             <button v-if="item.can_archive" type="button" class="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60" :disabled="workingRequestId === item.id" @click="archiveRequest(item)">Archive</button>
                           </div>
@@ -191,6 +200,24 @@
                   <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">{{ procurementCountLabel(selectedRequest) }}</span>
                 </div>
                 <div class="mt-4 flex flex-wrap gap-3">
+                  <button
+                    v-if="canReviewCompletion(selectedRequest)"
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-[16px] bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="workingRequestId === selectedRequest.id"
+                    @click="approveCompletionReview"
+                  >
+                    Close Job
+                  </button>
+                  <button
+                    v-if="canReviewCompletion(selectedRequest)"
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="workingRequestId === selectedRequest.id"
+                    @click="rejectCompletionReview"
+                  >
+                    Reject Report
+                  </button>
                   <button
                     v-if="canOpenAssignTeam(selectedRequest)"
                     type="button"
@@ -429,6 +456,7 @@ const {
   requestMetaChips,
   fetchDashboard,
   reviewRequest,
+  finalReview,
   assignTeamEquipment,
   planMaterials,
   archiveRequest,
@@ -460,6 +488,10 @@ const ASSIGN_TEAM_CACHE_MS = 30 * 1000
 
 const openMaterialWorkflow = async (item) => {
   const status = String(item?.status || '').trim().toLowerCase()
+  if (canReviewCompletion(item)) {
+    selectedRequest.value = item
+    return
+  }
   if (item?.can_review || status === 'pending') return reviewRequest(item, 'approve')
   if (item?.can_plan_materials && !item?.pricing_ready_for_assignment) return planMaterials(item)
   if (item?.can_plan_materials && !item?.payment_ready_for_assignment) return planMaterials(item)
@@ -572,6 +604,10 @@ const isExcludedOfficeRole = (role) => {
 }
 
 const canOpenAssignTeam = (item) => !['completed', 'cancelled', 'rejected'].includes(normalizeValue(item?.status))
+const canReviewCompletion = (item) => (
+  normalizeValue(item?.status) === 'completed'
+  && normalizeValue(item?.completion_review_status) !== 'approved'
+)
 
 const toTimeValue = (value) => {
   const stamp = new Date(String(value || '').trim()).getTime()
@@ -595,9 +631,10 @@ const queueSortPriority = (item) => {
   if (stock === 'pending_stock_check') return 2
   if (stock === 'stock_unavailable' || procurement === 'pending_procurement' || status === 'awaiting_material') return 3
   if (['assigned', 'job_ready', 'approved', 'accepted'].includes(status)) return 4
-  if (status === 'in_progress') return 5
-  if (status === 'completed') return 6
-  return 7
+  if (canReviewCompletion(item)) return 5
+  if (status === 'in_progress') return 6
+  if (status === 'completed') return 7
+  return 8
 }
 
 const queueSortTimestamp = (item) => {
@@ -948,8 +985,8 @@ const assignTeamName = (employees = [], requestId = null) => {
 
 const submitAssignedTeam = async () => {
   if (!assignTeamRequest.value) return
-  if (!selectedAssignEmployees.value.length) {
-    Swal.fire('Select employees', 'Please choose at least one employee account.', 'warning')
+  if (selectedAssignEmployees.value.length !== 3) {
+    Swal.fire('Select 3 personnel', 'Dispatch must include exactly 3 personnel: 1 team leader and 2 technicians.', 'warning')
     return
   }
   if (!assignTeamMaterials.value.length) {
@@ -1017,8 +1054,25 @@ const submitAssignedTeam = async () => {
   }
 }
 
+const approveCompletionReview = async () => {
+  if (!selectedRequest.value) return
+  const handled = await finalReview(selectedRequest.value, 'approve')
+  if (handled) {
+    selectedRequest.value = null
+  }
+}
+
+const rejectCompletionReview = async () => {
+  if (!selectedRequest.value) return
+  const handled = await finalReview(selectedRequest.value, 'reject')
+  if (handled) {
+    selectedRequest.value = null
+  }
+}
+
 const operationsActionLabel = (item) => {
   const status = String(item?.status || '').trim().toLowerCase()
+  if (canReviewCompletion(item)) return 'Final Review'
   if (item?.can_review || status === 'pending') return 'Open Review'
   if (item?.can_plan_materials && !item?.pricing_ready_for_assignment) return 'Plan Materials'
   if (item?.can_plan_materials && !item?.payment_ready_for_assignment) return 'Open Release Checks'
@@ -1028,6 +1082,9 @@ const operationsActionLabel = (item) => {
 
 const operationsActionHelp = (item) => {
   const status = String(item?.status || '').trim().toLowerCase()
+  if (canReviewCompletion(item)) {
+    return 'Use this to verify the field completion report, close the job, or reject the report and send it back for rework.'
+  }
   if (item?.can_review || status === 'pending') {
     return 'Use this to open the Operations review workspace, confirm the request details, and decide whether the job needs inspection, materials planning, or direct dispatch.'
   }

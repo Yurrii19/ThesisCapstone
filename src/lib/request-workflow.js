@@ -90,7 +90,7 @@ export const WORKFLOW_TRACKER_STEPS = [
     id: 8,
     key: 'warranty_handling',
     title: 'Warranty Handling',
-    summary: 'If a defect is reported during the warranty period, the provider reviews the claim and reopens the job at no charge when valid.',
+    summary: 'If a defect is reported during the warranty period, the claim is surfaced back to CSR as a priority ticket and the job is reopened at no charge when the follow-up is valid.',
   },
 ]
 
@@ -102,7 +102,7 @@ export const requestWorkflowDescription = (key) => ({
   dispatch_ready: 'All required materials are received and the request is job ready for field deployment.',
   service_execution: 'The assigned team is already performing the service and updating the job progress.',
   completed: 'Service is completed and the warranty is already active.',
-  warranty_handling: 'A warranty claim was filed and the provider is reviewing or reworking the completed service at no charge when valid.',
+  warranty_handling: 'A warranty claim was filed, surfaced back to CSR as a priority ticket, and is being reviewed for free follow-up repair when valid.',
   rejected: 'The request was rejected during the review process.',
   cancelled: 'The request was cancelled.',
 }[key] || 'Status update.')

@@ -15,6 +15,8 @@ const loadingToast = window.__appLoadingToast || createToastInterface({
     position: POSITION.TOP_RIGHT,
     timeout: false,
     closeOnClick: false,
+    closeButton: 'button',
+    showCloseButtonOnHover: false,
     pauseOnHover: false,
     draggable: false,
     maxToasts: 1,

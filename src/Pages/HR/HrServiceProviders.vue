@@ -245,6 +245,8 @@ const toast = (typeof window !== 'undefined' && window.__appFeedbackToast)
     position: POSITION.TOP_RIGHT,
     timeout: 2400,
     closeOnClick: true,
+    closeButton: 'button',
+    showCloseButtonOnHover: false,
     pauseOnFocusLoss: true,
     pauseOnHover: true,
     draggable: true,
@@ -516,4 +518,3 @@ onMounted(() => {
   fetchServiceProviders();
 });
 </script>
-

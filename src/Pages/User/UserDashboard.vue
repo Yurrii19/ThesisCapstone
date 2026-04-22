@@ -232,11 +232,11 @@
               <h2 class="mt-2 text-2xl font-bold text-slate-900">{{ userAccountReviewTitle }}</h2>
               <p class="mt-2 max-w-3xl text-sm text-slate-600">{{ userAccountReviewCopy }}</p>
             </div>
-            <span class="inline-flex self-start rounded-full px-3 py-1 text-xs font-semibold" :class="accountApprovalState === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'">
+            <span class="inline-flex self-start rounded-full px-3 py-1 text-xs font-semibold" :class="isAccountCorrectionRequired ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'">
               {{ userAccountStatusLabel }}
             </span>
           </div>
-          <div v-if="userAccountReviewMessage" class="mt-4 rounded-2xl border px-4 py-3 text-sm" :class="accountApprovalState === 'rejected' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'">
+          <div v-if="userAccountReviewMessage" class="mt-4 rounded-2xl border px-4 py-3 text-sm" :class="isAccountCorrectionRequired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'">
             <p class="font-semibold">Admin Note</p>
             <p class="mt-1">{{ userAccountReviewMessage }}</p>
           </div>
@@ -687,8 +687,8 @@
                     <span class="inline-flex rounded-full border border-teal-100 bg-emerald-50/90 px-3 py-1 text-[0.72rem] font-semibold text-emerald-700 shadow-sm">
                       View Ready
                     </span>
-                    <span class="inline-flex rounded-full px-3 py-1 text-[0.72rem] font-semibold shadow-sm" :class="statusClass(latestBookingRequest.status)">
-                      {{ prettyStatus(latestBookingRequest.status) }}
+                    <span class="inline-flex rounded-full px-3 py-1 text-[0.72rem] font-semibold shadow-sm" :class="statusClass(latestBookingRequest)">
+                      {{ prettyStatus(latestBookingRequest) }}
                     </span>
                   </div>
                 </div>
@@ -743,8 +743,8 @@
                         Check the current request stage or open the full detail view for the complete timeline.
                       </p>
                     </div>
-                    <span class="inline-flex rounded-full px-3 py-1 text-[0.72rem] font-semibold shadow-sm" :class="statusClass(latestBookingRequest.status)">
-                      {{ prettyStatus(latestBookingRequest.status) }}
+                    <span class="inline-flex rounded-full px-3 py-1 text-[0.72rem] font-semibold shadow-sm" :class="statusClass(latestBookingRequest)">
+                      {{ prettyStatus(latestBookingRequest) }}
                     </span>
                   </div>
 
@@ -805,8 +805,8 @@
                         <span class="hidden rounded-full border border-teal-100 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 sm:inline-flex">
                           View Ready
                         </span>
-                        <span class="hidden rounded-full px-3 py-1 text-[11px] font-semibold sm:inline-flex" :class="statusClass(latestBookingRequest.status)">
-                          {{ prettyStatus(latestBookingRequest.status) }}
+                        <span class="hidden rounded-full px-3 py-1 text-[11px] font-semibold sm:inline-flex" :class="statusClass(latestBookingRequest)">
+                          {{ prettyStatus(latestBookingRequest) }}
                         </span>
                         <button
                           type="button"
@@ -847,8 +847,8 @@
                         </div>
 
                         <div class="flex shrink-0 flex-wrap items-center gap-2 lg:max-w-[220px] lg:justify-end">
-                          <span class="inline-flex rounded-full px-3 py-1 text-[11px] font-semibold shadow-sm" :class="statusClass(latestBookingRequest.status)">
-                            {{ prettyStatus(latestBookingRequest.status) }}
+                          <span class="inline-flex rounded-full px-3 py-1 text-[11px] font-semibold shadow-sm" :class="statusClass(latestBookingRequest)">
+                            {{ prettyStatus(latestBookingRequest) }}
                           </span>
                           <span class="inline-flex rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
                             Stage {{ userCurrentStep(latestBookingRequest) }}/{{ userTotalSteps(latestBookingRequest) }}
@@ -956,8 +956,8 @@
                                 <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Status</p>
                                 <p class="mt-2 text-sm font-medium text-slate-500">Current request stage</p>
                               </div>
-                              <span class="inline-flex rounded-full px-3 py-1 text-[11px] font-semibold" :class="statusClass(latestBookingRequest.status)">
-                                {{ prettyStatus(latestBookingRequest.status) }}
+                              <span class="inline-flex rounded-full px-3 py-1 text-[11px] font-semibold" :class="statusClass(latestBookingRequest)">
+                                {{ prettyStatus(latestBookingRequest) }}
                               </span>
                             </div>
                           </div>
@@ -1094,7 +1094,7 @@
                           <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
                             Stage {{ userCurrentStep(latestBookingRequest) }}/{{ userTotalSteps(latestBookingRequest) }}
                           </span>
-                          <span class="rounded-full px-3 py-1 text-[11px] font-semibold" :class="statusClass(latestBookingRequest.status)">
+                          <span class="rounded-full px-3 py-1 text-[11px] font-semibold" :class="statusClass(latestBookingRequest)">
                             {{ userProgressPercent(latestBookingRequest) }}%
                           </span>
                         </div>
@@ -1185,8 +1185,8 @@
                   <p class="text-sm font-semibold text-slate-900">{{ req.business_name }}</p>
                   <p class="text-xs text-slate-500">{{ req.service_type || 'N/A' }}</p>
                 </div>
-                <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(req.status)">
-                  {{ prettyStatus(req.status) }}
+                <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(req)">
+                  {{ prettyStatus(req) }}
                 </span>
               </div>
               <p class="mt-2 text-xs text-slate-500">Requested at {{ formatDateTime(req.created_at) }}</p>
@@ -1244,8 +1244,8 @@
                   <p class="text-sm font-semibold text-slate-900">{{ req.business_name }}</p>
                   <p class="text-xs text-slate-500">{{ req.service_type || 'N/A' }}</p>
                 </div>
-                <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(req.status)">
-                  {{ prettyStatus(req.status) }}
+                <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(req)">
+                  {{ prettyStatus(req) }}
                 </span>
               </div>
               <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1257,6 +1257,13 @@
                   <p class="text-[11px] uppercase tracking-wide text-slate-500">Inspection Result</p>
                   <p class="mt-1 text-sm font-semibold text-slate-900">{{ inspectionResultLabel(req.inspection_result, req.status) }}</p>
                 </div>
+              </div>
+              <div class="mt-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2">
+                <p class="text-[11px] uppercase tracking-wide text-sky-700">Live Field Update</p>
+                <p class="mt-1 text-sm font-semibold text-slate-900">{{ liveReportStageLabel(req) }}</p>
+                <p v-if="req.completion_review_status === 'pending'" class="mt-1 text-xs text-sky-700">
+                  Operations is reviewing the submitted completion report before the job is closed.
+                </p>
               </div>
             </article>
           </div>
@@ -1294,8 +1301,8 @@
                   <p class="text-sm font-semibold text-slate-900">{{ req.business_name }}</p>
                   <p class="text-xs text-slate-500">{{ req.service_type || 'N/A' }}</p>
                 </div>
-                <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(req.status)">
-                  {{ prettyStatus(req.status) }}
+                <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(req)">
+                  {{ prettyStatus(req) }}
                 </span>
               </div>
               <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1363,8 +1370,8 @@
                   <p class="text-sm font-semibold text-slate-900">{{ req.business_name }}</p>
                   <p class="text-xs text-slate-500">{{ req.service_type || 'N/A' }}</p>
                 </div>
-                <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(req.status)">
-                  {{ prettyStatus(req.status) }}
+                <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="statusClass(req)">
+                  {{ prettyStatus(req) }}
                 </span>
               </div>
               <div class="mt-3 rounded-lg border border-cyan-100 bg-cyan-50 px-3 py-2">
@@ -1546,11 +1553,11 @@
                   <p class="mt-1 font-semibold text-gray-800">{{ authUser.email || 'N/A' }}</p>
                 </div>
                 <div class="rounded-2xl border border-gray-100 bg-gray-50 p-4 sm:col-span-2">
-                  <div v-if="userAccountReviewMessage" class="mb-4 rounded-2xl border px-4 py-3 text-sm" :class="accountApprovalState === 'rejected' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'">
+                  <div v-if="userAccountReviewMessage" class="mb-4 rounded-2xl border px-4 py-3 text-sm" :class="isAccountCorrectionRequired ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-700'">
                     <p class="font-semibold">Account Review Note</p>
                     <p class="mt-1">{{ userAccountReviewMessage }}</p>
                   </div>
-                  <div v-if="accountApprovalState === 'rejected'" class="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  <div v-if="isAccountCorrectionRequired" class="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                     Upload a new valid Government ID below. Once submitted, your account goes back to pending review and appears again in the admin review table.
                   </div>
                   <div v-else-if="hasAccountResubmission && !isApproved" class="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
@@ -1615,7 +1622,7 @@
                       :disabled="!selectedGovernmentId || governmentIdUploading"
                       @click="submitGovernmentId"
                     >
-                      {{ governmentIdUploading ? 'Uploading...' : accountApprovalState === 'rejected' ? 'Resubmit Government ID' : 'Upload Document' }}
+                      {{ governmentIdUploading ? 'Uploading...' : isAccountCorrectionRequired ? 'Resubmit Government ID' : 'Upload Document' }}
                     </button>
                     <button
                       v-if="selectedGovernmentId"
@@ -1726,6 +1733,7 @@
             :team-context="serviceRequestContext"
             :embedded="true"
             @close="closeServiceRequestModal"
+            @submitted="handleEmbeddedRequestSubmitted"
           />
         </div>
       </div>
@@ -1915,16 +1923,19 @@
 <script setup>
 import { ref, reactive, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
 import axios from 'axios'
+import Toastify from 'toastify-js'
+import 'toastify-js/src/toastify.css'
 import Swal from '@/lib/sweetalert-toast-shim'
 import { resolveStoredFileUrl, stripFileQuery } from '@/lib/file-url'
 import { router } from '@inertiajs/vue3'
 import { onAuthStateChanged } from 'firebase/auth'
-import { firebaseAuth } from '@/firebase/client'
+import { onValue, ref as realtimeRef } from 'firebase/database'
+import { firebaseAuth, firebaseConfigReady, realtimeDb } from '@/firebase/client'
 import L from 'leaflet'
 import { createToastInterface, POSITION } from 'vue-toastification'
 import { confirmAndLogout } from '@/lib/auth-flow'
 import { CAVITE_BARANGAYS_BY_CODE } from '@/data/caviteBarangaysFallback'
-import { hasLocalResubmission, markProfileResubmitted } from '@/lib/profile-resubmission'
+import { clearProfileResubmission, hasLocalResubmission, markProfileResubmitted } from '@/lib/profile-resubmission'
 import {
   WORKFLOW_TRACKER_FLOW,
   WORKFLOW_TRACKER_LABELS,
@@ -1962,6 +1973,142 @@ const normalizeApprovalFlag = (value) => {
   if (['1', 'true', 'yes', 'approved', 'active'].includes(normalized)) return true
   if (['0', 'false', 'no', '', 'pending', 'rejected', 'archived', 'deleted'].includes(normalized)) return false
   return Boolean(value)
+}
+const trimReviewText = (value) => String(value ?? '').trim()
+const classifyAccountReviewKind = (value = {}) => {
+  const explicitKind = normalizeStatusKey(value.latest_account_review_kind || value.kind || '')
+  if (['approved', 'rejected', 'deleted', 'resubmitted'].includes(explicitKind)) return explicitKind
+
+  const title = trimReviewText(value.latest_account_review_title || value.title).toLowerCase()
+  const message = trimReviewText(value.latest_account_review_message || value.message).toLowerCase()
+  const text = `${title}\n${message}`
+
+  if (!text.trim()) return ''
+  if (
+    text.includes('resubmitted')
+    || text.includes('submitted for review')
+    || text.includes('updated government id was submitted')
+    || text.includes('updated documents were submitted')
+    || text.includes('submitted updated documents for review')
+  ) {
+    return 'resubmitted'
+  }
+  if (text.includes('deleted')) return 'deleted'
+  if (text.includes('rejected')) return 'rejected'
+  if (text.includes('approved') || text.includes('unlocked')) return 'approved'
+  return ''
+}
+const hasServerResubmissionSignalForProfile = (profile = {}) => {
+  const reviewAt = trimReviewText(profile.latest_account_review_at)
+  const reviewKind = classifyAccountReviewKind(profile)
+  const reviewTitle = trimReviewText(profile.latest_account_review_title || profile.title).toLowerCase()
+  const reviewMessage = trimReviewText(profile.latest_account_review_message || profile.message).toLowerCase()
+  const resubmittedAt = trimReviewText(profile.document_resubmitted_at)
+  const hasStoredResubmissionFile = Boolean(
+    trimReviewText(profile.government_id_resubmission || profile.government_id_resubmission_url)
+  )
+  const resubmittedTime = resubmittedAt ? new Date(resubmittedAt).getTime() : NaN
+  const reviewTime = reviewAt ? new Date(reviewAt).getTime() : NaN
+  const resubmittedAfterReview = Boolean(resubmittedAt) && (
+    !reviewAt
+    || Number.isNaN(resubmittedTime)
+    || Number.isNaN(reviewTime)
+    || resubmittedTime >= reviewTime
+  )
+
+  return Boolean(
+    reviewKind === 'resubmitted'
+    || reviewTitle.includes('resubmitted')
+    || reviewMessage.includes('resubmitted')
+    || reviewMessage.includes('updated government id')
+    || reviewMessage.includes('updated documents were submitted')
+    || reviewMessage.includes('submitted for review')
+    || resubmittedAfterReview
+    || hasStoredResubmissionFile
+  )
+}
+const hasAccountResubmissionSignalForProfile = (profile = {}) => {
+  const reviewAt = trimReviewText(profile.latest_account_review_at)
+  return hasServerResubmissionSignalForProfile(profile) || hasLocalResubmission(profile, reviewAt)
+}
+const syncLocalResubmissionState = (profile = {}) => {
+  if (hasServerResubmissionSignalForProfile(profile)) {
+    const timestamp = trimReviewText(profile.document_resubmitted_at || profile.latest_account_review_at)
+    if (timestamp) {
+      markProfileResubmitted(profile, timestamp)
+    }
+    return
+  }
+  clearProfileResubmission(profile)
+}
+const computeAccountApprovalStateForProfile = (profile = {}) => {
+  const status = normalizeStatusKey(profile.status || profile.approval_status)
+  const hasResubmission = hasAccountResubmissionSignalForProfile(profile)
+
+  if (status === 'deleted') return hasResubmission ? 'pending' : 'deleted'
+  if (status === 'rejected') return hasResubmission ? 'pending' : 'rejected'
+  if (['pending', 'pending_approval'].includes(status)) return 'pending'
+  if (status === 'approved') return 'approved'
+  return normalizeApprovalFlag(profile.is_approved) ? 'approved' : 'pending'
+}
+const hasValidAccountReviewPayload = (profile = {}) => {
+  const createdAt = trimReviewText(profile.latest_account_review_at)
+  const title = trimReviewText(profile.latest_account_review_title || profile.title)
+  const message = trimReviewText(profile.latest_account_review_message || profile.message)
+  const reviewKind = classifyAccountReviewKind(profile)
+  const accountState = computeAccountApprovalStateForProfile(profile)
+  const hasResubmission = hasAccountResubmissionSignalForProfile(profile)
+
+  if (!createdAt || !title || !message || !reviewKind) return false
+  if (accountState === 'approved') return reviewKind === 'approved'
+  if (accountState === 'rejected') return reviewKind === 'rejected'
+  if (accountState === 'deleted') return reviewKind === 'deleted'
+  if (accountState === 'pending') return hasResubmission && reviewKind === 'resubmitted'
+  return false
+}
+const sanitizeDashboardProfile = (profile = {}) => {
+  const nextProfile = {
+    ...profile,
+    rejection_reason: trimReviewText(profile.rejection_reason),
+    rejection_checklist: Array.isArray(profile.rejection_checklist) ? profile.rejection_checklist.filter(Boolean) : [],
+    latest_account_review_title: trimReviewText(profile.latest_account_review_title),
+    latest_account_review_message: trimReviewText(profile.latest_account_review_message),
+    latest_account_review_kind: trimReviewText(profile.latest_account_review_kind),
+    latest_account_review_at: trimReviewText(profile.latest_account_review_at),
+    latest_account_review_seen_at: trimReviewText(profile.latest_account_review_seen_at),
+    document_resubmitted_at: trimReviewText(profile.document_resubmitted_at),
+  }
+
+  const accountState = computeAccountApprovalStateForProfile(nextProfile)
+
+  if (!['rejected', 'deleted'].includes(accountState)) {
+    nextProfile.rejection_reason = ''
+    nextProfile.rejection_checklist = []
+  }
+
+  if (!hasValidAccountReviewPayload(nextProfile)) {
+    nextProfile.latest_account_review_title = ''
+    nextProfile.latest_account_review_message = ''
+    nextProfile.latest_account_review_kind = ''
+    nextProfile.latest_account_review_at = ''
+    nextProfile.latest_account_review_seen_at = ''
+  }
+
+  return nextProfile
+}
+const isAccountReviewNotification = (note = {}) => (
+  String(note?.type || note?.category || '').toLowerCase().includes('account_review')
+)
+const isRelevantAccountReviewNotification = (note, profile = {}) => {
+  if (!isAccountReviewNotification(note)) return true
+  return hasValidAccountReviewPayload({
+    ...sanitizeDashboardProfile(profile),
+    latest_account_review_title: trimReviewText(note?.title),
+    latest_account_review_message: trimReviewText(note?.message),
+    latest_account_review_kind: trimReviewText(note?.kind),
+    latest_account_review_at: trimReviewText(note?.created_at),
+    latest_account_review_seen_at: trimReviewText(note?.read_at),
+  })
 }
 const setSectionInUrl = (name) => {
   if (typeof window === 'undefined') return
@@ -2048,50 +2195,13 @@ const authUser = reactive({
   latest_account_review_at: initialDashboardProfile.latest_account_review_at || initialStoredAuthIdentity.latest_account_review_at || '',
   latest_account_review_seen_at: initialDashboardProfile.latest_account_review_seen_at || initialStoredAuthIdentity.latest_account_review_seen_at || '',
 })
+Object.assign(authUser, sanitizeDashboardProfile(authUser))
+syncLocalResubmissionState(authUser)
 const hasAccountResubmission = computed(() => {
-  const reviewKind = normalizeStatusKey(authUser.latest_account_review_kind)
-  const reviewTitle = String(authUser.latest_account_review_title || '').trim().toLowerCase()
-  const reviewMessage = String(authUser.latest_account_review_message || '').trim().toLowerCase()
-  const reviewAt = String(authUser.latest_account_review_at || '').trim()
-  const resubmittedAt = String(authUser.document_resubmitted_at || '').trim()
-  const hasStoredResubmissionFile = Boolean(
-    String(authUser.government_id_resubmission || authUser.government_id_resubmission_url || '').trim()
-  )
-  const resubmittedTime = resubmittedAt ? new Date(resubmittedAt).getTime() : 0
-  const reviewTime = reviewAt ? new Date(reviewAt).getTime() : 0
-  const resubmittedAfterReview = Boolean(resubmittedAt) && (
-    !reviewAt
-    || Number.isNaN(resubmittedTime)
-    || Number.isNaN(reviewTime)
-    || resubmittedTime >= reviewTime
-  )
-
-  return Boolean(
-    reviewKind === 'resubmitted'
-    || reviewTitle.includes('resubmitted')
-    || reviewMessage.includes('resubmitted')
-    || reviewMessage.includes('updated government id')
-    || reviewMessage.includes('updated documents were submitted')
-    || resubmittedAfterReview
-    || hasStoredResubmissionFile
-    || hasLocalResubmission(authUser, reviewAt)
-  )
+  return hasAccountResubmissionSignalForProfile(authUser)
 })
-const accountApprovalState = computed(() => {
-  const status = normalizeStatusKey(authUser.status || authUser.approval_status)
-
-  if (status === 'rejected') {
-    return hasAccountResubmission.value ? 'pending' : 'rejected'
-  }
-  if (['pending', 'pending_approval'].includes(status)) {
-    return 'pending'
-  }
-  if (status === 'approved') {
-    return 'approved'
-  }
-
-  return normalizeApprovalFlag(authUser.is_approved) ? 'approved' : 'pending'
-})
+const accountApprovalState = computed(() => computeAccountApprovalStateForProfile(authUser))
+const isAccountCorrectionRequired = computed(() => ['rejected', 'deleted'].includes(accountApprovalState.value))
 const isApproved = computed(() => accountApprovalState.value === 'approved')
 const governmentIdResubmissionLocked = computed(() => (
   accountApprovalState.value === 'pending' && hasAccountResubmission.value
@@ -2102,23 +2212,34 @@ const canSubmitGovernmentIdReplacement = computed(() => {
 })
 const userAccountStatusLabel = computed(() => {
   if (accountApprovalState.value === 'approved') return 'Active'
+  if (accountApprovalState.value === 'deleted') return 'Deleted'
   if (accountApprovalState.value === 'rejected') return 'Rejected'
   return 'Pending Review'
 })
 const userAccountStatusClass = computed(() => {
   if (accountApprovalState.value === 'approved') return 'text-emerald-700'
-  if (accountApprovalState.value === 'rejected') return 'text-rose-700'
+  if (isAccountCorrectionRequired.value) return 'text-rose-700'
   return 'text-amber-700'
 })
-const userAccountReviewMessage = computed(() =>
-  String(authUser.rejection_reason || authUser.latest_account_review_message || '').trim()
-)
+const userAccountReviewMessage = computed(() => {
+  if (isAccountCorrectionRequired.value) {
+    return trimReviewText(authUser.rejection_reason || authUser.latest_account_review_message)
+  }
+  if (hasAccountResubmission.value) {
+    return trimReviewText(authUser.latest_account_review_message)
+  }
+  return ''
+})
 const userAccountReviewTitle = computed(() => {
+  if (accountApprovalState.value === 'deleted') return 'Account Deleted'
   if (accountApprovalState.value === 'rejected') return 'Account Rejected'
   if (hasAccountResubmission.value) return 'Documents Resubmitted'
   return 'Account Pending Review'
 })
 const userAccountReviewCopy = computed(() => {
+  if (accountApprovalState.value === 'deleted') {
+    return 'Your customer account was removed from active use. Review the admin note, correct the profile details if needed, then upload a new valid Government ID to send the account back for review.'
+  }
   if (accountApprovalState.value === 'rejected') {
     return 'Your customer account can still sign in, but booking modules stay locked until you upload a new valid Government ID from Profile and the admin reviews it again.'
   }
@@ -2145,6 +2266,8 @@ const toast = createToastInterface({
   position: POSITION.TOP_RIGHT,
   timeout: 5000,
   closeOnClick: true,
+  closeButton: 'button',
+  showCloseButtonOnHover: false,
   pauseOnHover: true,
   containerClassName: REQUEST_TOAST_CONTAINER_CLASS,
   toastClassName: REQUEST_TOAST_CLASS,
@@ -2195,6 +2318,31 @@ const showFeedbackToast = (type, message, timeout = 2600) => {
     bodyClassName: REQUEST_TOAST_BODY_CLASS,
     hideProgressBar: true,
   })
+}
+
+const showToastifyAlert = (message, type = 'info') => {
+  const text = String(message || '').trim()
+  if (!text) return
+
+  const backgrounds = {
+    success: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    error: 'linear-gradient(135deg, #ef4444, #b91c1c)',
+    warning: 'linear-gradient(135deg, #f97316, #ea580c)',
+    info: 'linear-gradient(135deg, #38bdf8, #2563eb)',
+  }
+
+  Toastify({
+    text,
+    duration: type === 'error' ? 3200 : 2400,
+    gravity: 'top',
+    position: 'right',
+    close: true,
+    stopOnFocus: true,
+    style: {
+      background: backgrounds[type] || backgrounds.info,
+      color: '#fff',
+    },
+  }).showToast()
 }
 
 const isPermissionDeniedError = (error) => {
@@ -2294,7 +2442,7 @@ const readStoredAuthIdentity = () => {
 }
 
 const persistResolvedDashboardProfile = (profile = {}) => {
-  const nextProfile = {
+  const nextProfile = sanitizeDashboardProfile({
     id: profile.id || profile.uid || authUser.id || authUser.uid || '',
     uid: profile.uid || profile.id || authUser.uid || authUser.id || '',
     first_name: profile.first_name ?? authUser.first_name ?? '',
@@ -2327,8 +2475,32 @@ const persistResolvedDashboardProfile = (profile = {}) => {
     latest_account_review_kind: profile.latest_account_review_kind ?? authUser.latest_account_review_kind ?? '',
     latest_account_review_at: profile.latest_account_review_at ?? authUser.latest_account_review_at ?? '',
     latest_account_review_seen_at: profile.latest_account_review_seen_at ?? authUser.latest_account_review_seen_at ?? '',
-  }
+  })
   writeUserDashboardProfileCache(nextProfile)
+}
+
+const applyResolvedDashboardProfile = (profile = {}, { syncNotifications = false } = {}) => {
+  const previousReviewAt = trimReviewText(authUser.latest_account_review_at)
+  const previousStatus = normalizeStatusKey(authUser.status || authUser.approval_status)
+  const nextProfile = sanitizeDashboardProfile({
+    ...authUser,
+    ...(profile || {}),
+  })
+
+  Object.assign(authUser, nextProfile)
+  syncLocalResubmissionState(nextProfile)
+  persistResolvedDashboardProfile(nextProfile)
+  profileImageFailed.value = false
+  notifications.value = mergeNotificationRows(mergeProfileReviewNotification(notifications.value || []))
+  notifyProfileReviewUpdate()
+
+  if (!syncNotifications) return
+
+  const nextReviewAt = trimReviewText(nextProfile.latest_account_review_at)
+  const nextStatus = normalizeStatusKey(nextProfile.status || nextProfile.approval_status)
+  if (nextReviewAt !== previousReviewAt || nextStatus !== previousStatus) {
+    fetchNotifications().catch(() => {})
+  }
 }
 
 const bookingReadyFormedTeams = computed(() =>
@@ -2375,6 +2547,7 @@ const zoomImageUrl = ref('')
 let requestPoller = null
 let realtimeChannel = null
 let firebaseSessionUnsubscribe = null
+let liveProfileUnsubscribe = null
 const requestDrivenSections = new Set([
   'bookingReview',
   'inspectionDeployment',
@@ -2585,7 +2758,8 @@ const readCachedProfileReviewNotification = () => {
   if (!cacheKey) return null
   const cache = readAccountReviewNotificationCache()
   const entry = cache?.[cacheKey]
-  return entry && typeof entry === 'object' ? entry : null
+  if (!entry || typeof entry !== 'object') return null
+  return isRelevantAccountReviewNotification(entry, authUser) ? entry : null
 }
 
 const writeCachedProfileReviewNotification = (notification) => {
@@ -2627,7 +2801,14 @@ const readCachedUserNotifications = () => {
   const cacheKey = currentAccountReviewCacheKey.value
   if (!cacheKey) return []
   const cache = readUserNotificationCache()
-  return Array.isArray(cache?.[cacheKey]) ? cache[cacheKey].map(normalizeNotificationEntry).filter(Boolean) : []
+  const rows = Array.isArray(cache?.[cacheKey]) ? cache[cacheKey].map(normalizeNotificationEntry).filter(Boolean) : []
+  const filtered = rows.filter((note) => isRelevantAccountReviewNotification(note, authUser))
+  if (filtered.length !== rows.length) {
+    const nextCache = readUserNotificationCache()
+    nextCache[cacheKey] = filtered
+    writeUserNotificationCache(nextCache)
+  }
+  return filtered
 }
 
 const writeCachedUserNotifications = (rows = []) => {
@@ -2643,6 +2824,7 @@ const mergeNotificationRows = (rows = []) => {
   const pushRow = (note) => {
     const normalized = normalizeNotificationEntry(note)
     if (!normalized) return
+    if (!isRelevantAccountReviewNotification(normalized, authUser)) return
     const existing = merged.get(normalized.id)
     merged.set(normalized.id, existing ? { ...existing, ...normalized } : normalized)
   }
@@ -2690,7 +2872,11 @@ const buildProfileReviewNotification = () => {
       created_at: createdAt,
       read_at: String(authUser.latest_account_review_seen_at || '').trim() || cachedReadAt || null,
     })
-    if (!notification) return null
+    if (!notification || !isRelevantAccountReviewNotification({
+      ...notification,
+      type: 'account_review',
+      category: 'account_review',
+    }, authUser)) return null
     writeCachedProfileReviewNotification(notification)
     return notification
   }
@@ -2791,11 +2977,7 @@ watch(
 const fetchProfile = async ()=>{
   try{
     const res = await axios.get('/user/profile')
-    Object.assign(authUser,res.data)
-    persistResolvedDashboardProfile(res.data || {})
-    profileImageFailed.value = false
-    notifications.value = mergeNotificationRows(mergeProfileReviewNotification(notifications.value || []))
-    notifyProfileReviewUpdate()
+    applyResolvedDashboardProfile(res.data || {})
   } catch(err){ console.error(err) }
 }
 const fetchBusinesses = async ()=>{
@@ -4000,7 +4182,7 @@ const handleCardProfilePhotoUpload = async (e) => {
 const handleGovernmentIdSelection = (e) => {
   if (!canSubmitGovernmentIdReplacement.value) {
     e.target.value = ''
-    Swal.fire('Document Already Submitted', 'Your latest resubmitted Government ID is already under review. Wait for admin rejection before uploading another replacement.', 'info')
+    showToastifyAlert('Your latest resubmitted Government ID is already under review. Wait for admin rejection before uploading another replacement.', 'info')
     return
   }
 
@@ -4009,7 +4191,7 @@ const handleGovernmentIdSelection = (e) => {
 
   const validationMessage = validateGovernmentIdFile(file)
   if (validationMessage) {
-    Swal.fire('Invalid File', validationMessage, 'warning')
+    showToastifyAlert(validationMessage, 'warning')
     e.target.value = ''
     clearSelectedGovernmentId()
     return
@@ -4044,14 +4226,14 @@ const closeImageZoom = () => {
 const submitGovernmentId = async () => {
   if (!selectedGovernmentId.value || governmentIdUploading.value) return
   if (!canSubmitGovernmentIdReplacement.value) {
-    Swal.fire('Document Already Submitted', 'Your latest resubmitted Government ID is already under review. Wait for admin rejection before uploading another replacement.', 'info')
+    showToastifyAlert('Your latest resubmitted Government ID is already under review. Wait for admin rejection before uploading another replacement.', 'info')
     clearSelectedGovernmentId()
     return
   }
 
   const validationMessage = validateGovernmentIdFile(selectedGovernmentId.value)
   if (validationMessage) {
-    Swal.fire('Invalid File', validationMessage, 'warning')
+    showToastifyAlert(validationMessage, 'warning')
     clearSelectedGovernmentId()
     return
   }
@@ -4069,7 +4251,7 @@ const submitGovernmentId = async () => {
     formData.append('last_name', authUser.last_name || '')
     formData.append('contact_number', authUser.contact_number || '')
     formData.append('_method', 'PUT')
-    if (accountApprovalState.value === 'rejected') {
+    if (isAccountCorrectionRequired.value) {
       formData.append('force_resubmission', '1')
     }
     formData.append('government_id', uploadedFile)
@@ -4081,8 +4263,12 @@ const submitGovernmentId = async () => {
     let committedGovernmentIdName = uploadedFileName
     let committedGovernmentIdPreviewUrl = uploadedPreviewUrl
     if (response?.data && typeof response.data === 'object') {
-      Object.assign(authUser, response.data)
-      persistResolvedDashboardProfile(response.data)
+      const nextProfile = sanitizeDashboardProfile({
+        ...authUser,
+        ...response.data,
+      })
+      Object.assign(authUser, nextProfile)
+      persistResolvedDashboardProfile(nextProfile)
       committedGovernmentIdName = String(response.data?.government_id_meta?.name || uploadedFileName || '').trim()
 
       const committedPath = String(
@@ -4124,13 +4310,13 @@ const submitGovernmentId = async () => {
     await fetchNotifications()
     await fetchProfile()
     clearSelectedGovernmentId()
-    Swal.fire('Success', 'Government ID uploaded successfully and sent back for review.', 'success')
+    showToastifyAlert('Government ID uploaded successfully and sent back for review.', 'success')
   } catch (err) {
     console.error(err)
     const fieldErrors = err?.response?.data?.errors || {}
     const governmentIdError = Array.isArray(fieldErrors.government_id) ? fieldErrors.government_id[0] : ''
     const message = governmentIdError || err?.response?.data?.message || 'Failed to upload Government ID.'
-    Swal.fire('Error', message, 'error')
+    showToastifyAlert(message, 'error')
   } finally {
     governmentIdUploading.value = false
   }
@@ -4146,6 +4332,18 @@ const closeApplyModal = ()=>showApplyModal.value=false
 const closeServiceRequestModal = () => {
   showServiceRequestModal.value = false
   serviceRequestContext.value = {}
+}
+const handleEmbeddedRequestSubmitted = (payload = {}) => {
+  const message = String(payload?.message || 'Service request submitted.').trim()
+  closeServiceRequestModal()
+  if (message) {
+    showFeedbackToast('success', message, 2200)
+  }
+  handleRequestSubmitted(
+    payload?.request || {},
+    payload?.submittedPayload || null,
+    payload?.selectedTeam || null,
+  )
 }
 
 const updateProfile = async ()=>{
@@ -4307,18 +4505,25 @@ const handleNotificationClick = async (note) => {
   }
 }
 
-const prettyStatus = (status)=>{
-  const s = String(status || '').toLowerCase()
+const isCompletionReviewPending = (req) => (
+  String(req?.status || '').trim().toLowerCase() === 'completed'
+  && String(req?.completion_review_status || '').trim().toLowerCase() === 'pending'
+)
+
+const prettyStatus = (input)=>{
+  const req = input && typeof input === 'object' ? input : null
+  const s = String(req?.status ?? input ?? '').toLowerCase()
   if(s === 'pending') return 'Pending'
   if(s === 'approved' || s === 'accepted') return 'Approved'
   if(s === 'assigned') return 'Team Assigned'
   if(s === 'in_progress' || s === 'ongoing') return 'Work in Progress'
+  if(s === 'completed' && isCompletionReviewPending(req)) return 'Awaiting OM Verification'
   if(s === 'completed') return 'Completed'
   if(s === 'rejected') return 'Rejected'
   if(s === 'cancelled') return 'Cancelled'
   if(s === 'awaiting_material') return 'Awaiting Materials'
   if(s === 'job_ready') return 'Dispatch Ready'
-  return status || 'Unknown'
+  return req?.status || input || 'Unknown'
 }
 
 const paymentMethodLabel = (method) => {
@@ -4628,6 +4833,18 @@ const inspectionResultLabel = (value, status) => {
   return 'Not inspected yet'
 }
 
+const liveReportStageLabel = (req) => {
+  const stage = String(req?.live_report_stage || '').trim().toLowerCase()
+  if (stage === 'arrived') return 'Status 1: Team arrived at the location'
+  if (stage === 'work_in_progress') return 'Status 2: Work in progress with before photos uploaded'
+  if (stage === 'completed' && String(req?.completion_review_status || '').trim().toLowerCase() === 'pending') {
+    return 'Status 3: Work completed, waiting for OM final verification'
+  }
+  if (stage === 'completed') return 'Status 3: Work completed'
+  if (String(req?.status || '').trim().toLowerCase() === 'job_ready') return 'Dispatch ready, waiting for team arrival'
+  return 'Waiting for live field update'
+}
+
 const receiptReferenceLabel = (req) => {
   const reference = String(req?.latest_invoice?.reference || '').trim()
   if (reference) return reference
@@ -4691,7 +4908,7 @@ const userTimeline = (req) => {
 
   const idx = userStatusFlow.indexOf(current)
   if (idx === -1) {
-    return [{ key: current || 'unknown', label: prettyStatus(req?.status), state: 'current', order: 1 }]
+    return [{ key: current || 'unknown', label: prettyStatus(req), state: 'current', order: 1 }]
   }
 
   return userStatusFlow.map((key, i) => ({
@@ -4741,9 +4958,9 @@ const userStageDescription = (key) => requestWorkflowDescription(key)
 
 const openUserStageInfo = (key, req) => {
   Swal.fire({
-    title: userStatusLabel[key] || prettyStatus(req.status),
+    title: userStatusLabel[key] || prettyStatus(req),
     text: userStageDescription(key),
-    footer: `Current status: ${prettyStatus(req.status)} | Last update: ${formatDateTime(req.updated_at || req.created_at)}`,
+    footer: `Current status: ${prettyStatus(req)} | Last update: ${formatDateTime(req.updated_at || req.created_at)}`,
     icon: 'info',
     confirmButtonText: 'OK'
   })
@@ -4780,8 +4997,10 @@ const showToast = ({ icon = 'info', title = '', text = '' })=>{
   })
 }
 
-const statusClass = (status)=>{
-  const s = String(status || '').toLowerCase()
+const statusClass = (input)=>{
+  const req = input && typeof input === 'object' ? input : null
+  const s = String(req?.status ?? input ?? '').toLowerCase()
+  if(s === 'completed' && isCompletionReviewPending(req)) return 'bg-sky-50 text-sky-700'
   if(s === 'pending') return 'bg-amber-50 text-amber-700'
   if(s === 'approved' || s === 'accepted') return 'bg-emerald-50 text-emerald-700'
   if(s === 'assigned') return 'bg-sky-50 text-sky-700'
@@ -4794,10 +5013,12 @@ const statusClass = (status)=>{
   return 'bg-gray-100 text-gray-700'
 }
 
-const cardAccentClass = (status) => {
-  const s = String(status || '').toLowerCase()
+const cardAccentClass = (input) => {
+  const req = input && typeof input === 'object' ? input : null
+  const s = String(req?.status ?? input ?? '').toLowerCase()
   if (s === 'rejected') return 'border-l-rose-500'
   if (s === 'cancelled') return 'border-l-slate-400'
+  if (s === 'completed' && isCompletionReviewPending(req)) return 'border-l-sky-500'
   if (s === 'completed') return 'border-l-emerald-500'
   if (s === 'in_progress' || s === 'ongoing') return 'border-l-indigo-500'
   if (s === 'awaiting_material') return 'border-l-orange-500'
@@ -5021,9 +5242,11 @@ const bookingFlowStats = computed(() => {
     pending: rows.filter((req) => String(req?.status || '').trim().toLowerCase() === 'pending').length,
     active: rows.filter((req) => {
       const status = String(req?.status || '').trim().toLowerCase()
-      return !['rejected', 'cancelled', 'completed'].includes(status)
+      if (['rejected', 'cancelled'].includes(status)) return false
+      if (status === 'completed' && !isCompletionReviewPending(req)) return false
+      return true
     }).length,
-    completed: rows.filter((req) => String(req?.status || '').trim().toLowerCase() === 'completed').length,
+    completed: rows.filter((req) => String(req?.status || '').trim().toLowerCase() === 'completed' && !isCompletionReviewPending(req)).length,
   }
 })
 
@@ -5092,7 +5315,7 @@ const canCancelForProvider = (provider) => {
 
 const lockMessage = computed(() => {
   if (!activeRequest.value) return ''
-  const status = prettyStatus(activeRequest.value.status)
+  const status = prettyStatus(activeRequest.value)
   const name = activeRequest.value.business_name || 'a business'
   if (String(activeRequest.value.status || '').trim().toLowerCase() === 'pending') {
     return `You already requested ${name}. Cancel it before requesting another.`
@@ -5298,7 +5521,7 @@ const cancelRequest = async (id) => {
   }
 }
 
-const handleRequestSubmitted = async (newRequest, submittedPayload = null, selectedTeam = null) => {
+const handleRequestSubmitted = (newRequest, submittedPayload = null, selectedTeam = null) => {
   const fallbackBusinessName = selectedTeam?.business_name || selectedTeam?.business || 'N/A'
   const fallbackTeam = selectedTeam?.team || null
   const mergedNotes = String(submittedPayload?.notes || '').trim()
@@ -5319,7 +5542,7 @@ const handleRequestSubmitted = async (newRequest, submittedPayload = null, selec
   }
   section.value = 'bookingRequest'
   setSectionInUrl('bookingRequest')
-  await fetchServiceRequests()
+  fetchServiceRequests().catch(() => {})
 }
 
 const handleRequestCancelled = async (payload = null) => {
@@ -5392,6 +5615,35 @@ const stopRealtime = ()=>{
   realtimeChannel = null
 }
 
+const unsubscribeLiveProfile = () => {
+  if (typeof liveProfileUnsubscribe === 'function') {
+    liveProfileUnsubscribe()
+  }
+  liveProfileUnsubscribe = null
+}
+
+const subscribeLiveProfile = (profileId) => {
+  unsubscribeLiveProfile()
+
+  const resolvedProfileId = String(profileId || '').trim()
+  if (!firebaseConfigReady || !realtimeDb || !resolvedProfileId) return
+
+  try {
+    liveProfileUnsubscribe = onValue(
+      realtimeRef(realtimeDb, `profiles/${resolvedProfileId}`),
+      (snapshot) => {
+        if (!snapshot.exists()) return
+        applyResolvedDashboardProfile(snapshot.val() || {}, { syncNotifications: true })
+      },
+      () => {
+        unsubscribeLiveProfile()
+      },
+    )
+  } catch {
+    unsubscribeLiveProfile()
+  }
+}
+
 const startRequestPolling = ()=>{
   if(requestPoller) return
   requestPoller = setInterval(fetchServiceRequests, 1000)
@@ -5406,10 +5658,15 @@ const stopRequestPolling = ()=>{
 /* INIT */
 onMounted(async ()=>{
   await fetchProfile()
+  subscribeLiveProfile(authUser.uid || authUser.id)
   notifications.value = mergeNotificationRows(mergeProfileReviewNotification(notifications.value || []))
   if (firebaseAuth && typeof onAuthStateChanged === 'function') {
     firebaseSessionUnsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
-      if (!firebaseUser?.uid) return
+      if (!firebaseUser?.uid) {
+        unsubscribeLiveProfile()
+        return
+      }
+      subscribeLiveProfile(firebaseUser.uid)
       await fetchProfile()
       await fetchNotifications()
     })
@@ -5440,6 +5697,7 @@ onMounted(async ()=>{
 onBeforeUnmount(()=>{
   stopRequestPolling()
   stopRealtime()
+  unsubscribeLiveProfile()
   if (typeof firebaseSessionUnsubscribe === 'function') {
     firebaseSessionUnsubscribe()
     firebaseSessionUnsubscribe = null
@@ -5477,7 +5735,12 @@ watch(showServiceRequestModal, (isOpen) => {
 })
 
 watch(() => authUser.id, (id) => {
-  if(id) startRealtime()
+  if (id) {
+    startRealtime()
+    subscribeLiveProfile(authUser.uid || id)
+    return
+  }
+  unsubscribeLiveProfile()
 })
 
 </script>

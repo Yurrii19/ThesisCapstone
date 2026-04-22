@@ -45,6 +45,8 @@ const rules = ref(props.rules.map((row) => ({ ...row, enabled: Boolean(row.enabl
 const toast = createToastInterface({
   position: POSITION.TOP_RIGHT,
   timeout: 1800,
+  closeButton: 'button',
+  showCloseButtonOnHover: false,
 })
 
 async function toggleRule(rule) {

@@ -19,7 +19,11 @@
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Account review</p>
                 <h2 class="mt-1 text-2xl font-black tracking-tight text-slate-900">User Details</h2>
               </div>
-              <button @click="closeModal" class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">&times;</button>
+              <button
+                @click="closeModal"
+                :disabled="actingOnUser"
+                class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >&times;</button>
             </div>
           </div>
 
@@ -74,7 +78,7 @@
                     :src="profilePhotoImageUrl"
                     alt="Profile Photo"
                     class="w-full h-64 rounded border bg-slate-100 object-contain cursor-zoom-in"
-                    @error="handleImageLoadError(profilePhoto, profilePhotoImageUrl)"
+                    @error="handleImageLoadError(profilePhoto, user.value?.profile_photo_url, { uid: user.value?.uid || user.value?.id, field: 'profile_photo' })"
                   />
                 </button>
                 <div v-else class="flex h-64 items-center justify-center rounded border border-dashed border-slate-300 bg-white text-sm text-slate-500">
@@ -85,7 +89,7 @@
             </div>
 
             <!-- User Government ID -->
-            <div v-if="user.role === 'user' && displayedGovernmentIdValue" class="bg-gray-50 p-6 rounded-lg shadow-md">
+            <div v-if="displayedGovernmentIdValue" class="bg-gray-50 p-6 rounded-lg shadow-md">
               <div v-if="hasActiveGovernmentIdResubmission" class="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm">
                 <p class="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">New Customer Upload</p>
                 <p class="mt-1 text-sm font-semibold text-emerald-900">This Government ID appears to be the latest resubmitted file from the user.</p>
@@ -120,7 +124,7 @@
                     :src="displayedGovernmentIdImageUrl"
                     alt="Government ID"
                     class="w-full h-64 rounded border bg-slate-100 object-contain cursor-zoom-in"
-                    @error="handleImageLoadError(displayedGovernmentIdValue, displayedGovernmentIdImageUrl)"
+                    @error="handleImageLoadError(displayedGovernmentIdValue, displayedGovernmentIdExplicitUrl, { uid: user.value?.uid || user.value?.id, field: 'government_id' })"
                   />
                 </button>
                 <div v-else class="flex h-64 items-center justify-center rounded border border-dashed border-slate-300 bg-white text-sm text-slate-500">
@@ -171,13 +175,24 @@
                   >
                     <p class="text-xs text-gray-500 mb-2">{{ doc.label }}</p>
                     <button
-                      v-if="isImageFile(doc.value)"
+                      v-if="isImageFile(doc.value) && doc.imageUrl"
                       type="button"
                       class="w-full"
-                      @click="openFilePreview(doc.value, doc.label)"
+                      @click="openFilePreview(doc.value, doc.label, doc.explicitUrl, { uid: user.value?.uid || user.value?.id, field: doc.key })"
                     >
-                      <img :src="docUrl(doc.value)" :alt="doc.label" class="w-full h-32 rounded border bg-slate-100 object-contain cursor-zoom-in" />
+                      <img
+                        :src="doc.imageUrl"
+                        :alt="doc.label"
+                        class="w-full h-32 rounded border bg-slate-100 object-contain cursor-zoom-in"
+                        @error="handleImageLoadError(doc.value, doc.explicitUrl, { uid: user.value?.uid || user.value?.id, field: doc.key })"
+                      />
                     </button>
+                    <div
+                      v-else-if="isImageFile(doc.value)"
+                      class="flex h-32 items-center justify-center rounded border border-dashed border-slate-300 bg-white text-sm text-slate-500"
+                    >
+                      Preview unavailable
+                    </div>
                     <div
                       v-else
                       class="flex h-32 flex-col justify-between rounded-lg border border-dashed border-slate-300 bg-white p-3 text-left"
@@ -191,7 +206,7 @@
                     <button
                       type="button"
                       class="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-700 transition hover:bg-cyan-100"
-                      @click="openFilePreview(doc.value, doc.label)"
+                      @click="openFilePreview(doc.value, doc.label, doc.explicitUrl, { uid: user.value?.uid || user.value?.id, field: doc.key })"
                     >
                       Open Document
                     </button>
@@ -238,18 +253,26 @@
                 <button
                   @click="approveUser"
                   :disabled="!canManageUser"
+                  :aria-busy="actingOnUser ? 'true' : 'false'"
                   class="rounded-xl bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-700 transition-colors hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {{ actingOnUser ? 'Processing...' : 'Approve' }}
+                  Approve
                 </button>
                 <button
                   @click="rejectUser"
                   :disabled="!canManageUser"
+                  :aria-busy="actingOnUser ? 'true' : 'false'"
                   class="rounded-xl bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {{ actingOnUser ? 'Processing...' : 'Reject' }}
+                  Reject
                 </button>
-                <button @click="closeModal" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100">Cancel</button>
+                <button
+                  @click="closeModal"
+                  :disabled="actingOnUser"
+                  class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
             </template>
@@ -293,29 +316,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import axios from 'axios'
 import { onValue, ref as realtimeRef } from 'firebase/database'
 import { createToastInterface, POSITION } from 'vue-toastification'
 import Swal from '@/lib/sweetalert-toast-shim'
 import { firebaseConfigReady, realtimeDb } from '@/firebase/client'
-import { resolveStoredFileUrl } from '@/lib/file-url'
+import { promptAdminAccountRejection } from '@/lib/admin-account-review'
+import { buildStoredFileUrlCandidates } from '@/lib/file-url'
 import { showProfessionalFeedbackToast } from '@/lib/professional-feedback-toast'
 import { hasLocalResubmission } from '@/lib/profile-resubmission'
-
-const REJECTION_OPTIONS = [
-  { value: 'invalid_government_id', label: 'Government ID is unclear, invalid, or missing' },
-  { value: 'location_information_missing', label: 'Location details are missing or inconsistent' },
-  { value: 'business_information_mismatch', label: 'Business information does not match the uploaded documents' },
-  { value: 'duplicate_registration', label: 'Possible duplicate or existing registration' },
-  { value: 'other_validation_issue', label: 'Other validation issue' },
-]
 
 const showModal = ref(false)
 const user = ref({})
 const loadingUser = ref(false)
 const actingOnUser = ref(false)
+const actionToastId = ref(null)
 const failedImageKeys = ref(new Set())
+const imageCandidateIndexes = ref({})
 const previewState = ref({
   open: false,
   src: '',
@@ -329,6 +347,8 @@ const toast = (typeof window !== 'undefined' && window.__appFeedbackToast)
     position: POSITION.TOP_RIGHT,
     timeout: 2400,
     closeOnClick: true,
+    closeButton: 'button',
+    showCloseButtonOnHover: false,
     pauseOnFocusLoss: true,
     pauseOnHover: true,
     draggable: true,
@@ -340,24 +360,100 @@ if (typeof window !== 'undefined' && !window.__appFeedbackToast) {
   window.__appFeedbackToast = toast
 }
 
-const imageKey = (value, explicitUrl = '') => `${String(value || '')}::${String(explicitUrl || '')}`
+const dismissActionProgressToast = () => {
+  if (actionToastId.value === null || typeof toast?.dismiss !== 'function') {
+    actionToastId.value = null
+    return
+  }
 
-const docUrl = (value, explicitUrl = '') => {
-  const resolved = String(explicitUrl || '').trim()
-  if (resolved) return resolved
-  return resolveStoredFileUrl(value, '')
+  toast.dismiss(actionToastId.value)
+  actionToastId.value = null
 }
 
-const safeImageUrl = (value, explicitUrl = '') => {
-  const url = docUrl(value, explicitUrl)
-  if (!url) return ''
-  return failedImageKeys.value.has(imageKey(value, explicitUrl)) ? '' : url
+const showActionProgressToast = (action) => {
+  dismissActionProgressToast()
+  const normalizedAction = String(action || '').trim().toLowerCase()
+  const title = normalizedAction === 'reject' ? 'Rejecting...' : 'approving account'
+
+  actionToastId.value = showProfessionalFeedbackToast(
+    toast,
+    'info',
+    title,
+    '',
+    false,
+  ) ?? null
 }
 
-const handleImageLoadError = (value, explicitUrl = '') => {
+const warmedImageUrls = new Set()
+
+const imageKey = (value, explicitUrl = '', options = {}) => [
+  String(value || '').trim(),
+  String(explicitUrl || '').trim(),
+  String(options?.field || '').trim(),
+  String(options?.uid || '').trim(),
+].join('::')
+
+const fileUrlCandidates = (value, explicitUrl = '', options = {}) => (
+  buildStoredFileUrlCandidates(value, {
+    explicitUrl,
+    uid: String(options?.uid || user.value?.uid || user.value?.id || '').trim(),
+    field: String(options?.field || '').trim(),
+    defaultFolder: '',
+  })
+)
+
+const docUrl = (value, explicitUrl = '', options = {}) => {
+  const candidates = fileUrlCandidates(value, explicitUrl, options)
+  if (!candidates.length) return ''
+
+  const key = imageKey(value, explicitUrl, options)
+  const candidateIndex = Number(imageCandidateIndexes.value[key] || 0)
+  return candidates[candidateIndex] || candidates[0] || ''
+}
+
+const safeImageUrl = (value, explicitUrl = '', options = {}) => {
+  const key = imageKey(value, explicitUrl, options)
+  if (failedImageKeys.value.has(key)) return ''
+  return docUrl(value, explicitUrl, options)
+}
+
+const handleImageLoadError = (value, explicitUrl = '', options = {}) => {
+  const key = imageKey(value, explicitUrl, options)
+  const candidates = fileUrlCandidates(value, explicitUrl, options)
+  const candidateIndex = Number(imageCandidateIndexes.value[key] || 0)
+
+  if (candidateIndex + 1 < candidates.length) {
+    imageCandidateIndexes.value = {
+      ...imageCandidateIndexes.value,
+      [key]: candidateIndex + 1,
+    }
+    return
+  }
+
   const next = new Set(failedImageKeys.value)
-  next.add(imageKey(value, explicitUrl))
+  next.add(key)
   failedImageKeys.value = next
+}
+
+const resetImageResolutionState = () => {
+  failedImageKeys.value = new Set()
+  imageCandidateIndexes.value = {}
+}
+
+const warmImageUrls = (urls = []) => {
+  if (typeof Image === 'undefined') return
+
+  urls
+    .map((url) => String(url || '').trim())
+    .filter(Boolean)
+    .forEach((url) => {
+      if (warmedImageUrls.has(url)) return
+      warmedImageUrls.add(url)
+      const image = new Image()
+      image.decoding = 'async'
+      image.loading = 'eager'
+      image.src = url
+    })
 }
 
 const isImageFile = (value) => {
@@ -612,8 +708,8 @@ const businessRecord = computed(() => {
   const fallback = buildBusinessFallbackRecord(user.value)
   if (candidate && typeof candidate === 'object' && Object.keys(candidate).length) {
     return {
-      ...candidate,
       ...(fallback || {}),
+      ...candidate,
     }
   }
 
@@ -638,7 +734,14 @@ const profilePhoto = computed(() => {
   return String(value || '').trim()
 })
 
-const profilePhotoImageUrl = computed(() => safeImageUrl(profilePhoto.value, user.value?.profile_photo_url))
+const profilePhotoImageUrl = computed(() => safeImageUrl(
+  profilePhoto.value,
+  user.value?.profile_photo_url,
+  {
+    uid: user.value?.uid || user.value?.id,
+    field: 'profile_photo',
+  },
+))
 const governmentIdHistoryEntries = computed(() => {
   const normalizeUploadedTime = (value = '') => {
     const timestamp = new Date(value).getTime()
@@ -795,7 +898,14 @@ const displayedGovernmentIdName = computed(() => {
   if (metaName) return metaName
   return fileName(displayedGovernmentIdValue.value)
 })
-const displayedGovernmentIdImageUrl = computed(() => safeImageUrl(displayedGovernmentIdValue.value, displayedGovernmentIdExplicitUrl.value))
+const displayedGovernmentIdImageUrl = computed(() => safeImageUrl(
+  displayedGovernmentIdValue.value,
+  displayedGovernmentIdExplicitUrl.value,
+  {
+    uid: user.value?.uid || user.value?.id,
+    field: 'government_id',
+  },
+))
 const governmentIdUpdatedAt = computed(() => (
   String(
     latestGovernmentIdEntry.value?.uploaded_at
@@ -809,6 +919,7 @@ const governmentIdUpdatedAt = computed(() => (
 ))
 const governmentIdUpdatedLabel = computed(() => formatDateTime(governmentIdUpdatedAt.value))
 const governmentIdResubmissionState = computed(() => {
+  const status = normalizeStatus(user.value?.status || user.value?.approval_status)
   const reviewKind = normalizeStatus(user.value?.latest_account_review_kind)
   const reviewTitle = String(user.value?.latest_account_review_title || '').trim().toLowerCase()
   const reviewMessage = String(user.value?.latest_account_review_message || '').trim().toLowerCase()
@@ -832,13 +943,17 @@ const governmentIdResubmissionState = computed(() => {
     || reviewMessage.includes('updated documents were submitted')
   )
   const localResubmission = hasLocalResubmission(user.value, reviewAt)
+  const hasPendingStoredResubmission = hasStoredResubmissionFile && (
+    !truthyValue(user.value?.is_approved)
+    || ['pending', 'pending_approval', 'rejected', 'under_review', 'reviewing'].includes(status)
+  )
 
   return {
     active: Boolean(
       hasReviewResubmissionSignal
       || resubmittedAfterReview
       || localResubmission
-      || (hasStoredResubmissionFile && (hasReviewResubmissionSignal || !reviewAt || resubmittedAfterReview))
+      || hasPendingStoredResubmission
     ),
   }
 })
@@ -976,6 +1091,95 @@ const serviceProviderDetailRows = computed(() => {
   ]).filter(Boolean)
 })
 
+const documentTimestamp = (...values) => values.reduce((latest, value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return latest
+
+  const normalized = /^\d{10,}$/.test(raw)
+    ? Number(raw)
+    : (raw.includes(' ') ? raw.replace(' ', 'T') : raw)
+  const time = new Date(normalized).getTime()
+  if (Number.isNaN(time)) return latest
+  return Math.max(latest, time)
+}, 0)
+
+const resolveLatestBusinessDocument = (fieldKey) => {
+  const profile = user.value || {}
+  const business = businessRecord.value || {}
+
+  const profileValue = String(profile[fieldKey] || '').trim()
+  const profileUrl = String(profile[`${fieldKey}_url`] || '').trim()
+  const profileMeta = profile[`${fieldKey}_meta`] && typeof profile[`${fieldKey}_meta`] === 'object'
+    ? profile[`${fieldKey}_meta`]
+    : null
+
+  const businessValue = String(business[fieldKey] || '').trim()
+  const businessUrl = String(business[`${fieldKey}_url`] || '').trim()
+  const businessMeta = business[`${fieldKey}_meta`] && typeof business[`${fieldKey}_meta`] === 'object'
+    ? business[`${fieldKey}_meta`]
+    : null
+
+  const profileDoc = (profileValue || profileUrl)
+    ? {
+        value: profileValue,
+        explicitUrl: profileUrl,
+        meta: profileMeta,
+        updatedAt: String(
+          profileMeta?.uploaded_at
+          || profileMeta?.updated_at
+          || profile.document_resubmitted_at
+          || profile.updated_at
+          || profile.latest_account_review_at
+          || ''
+        ).trim(),
+        source: 'profile',
+      }
+    : null
+
+  const businessDoc = (businessValue || businessUrl)
+    ? {
+        value: businessValue,
+        explicitUrl: businessUrl,
+        meta: businessMeta,
+        updatedAt: String(
+          businessMeta?.uploaded_at
+          || businessMeta?.updated_at
+          || business.updated_at
+          || business.created_at
+          || ''
+        ).trim(),
+        source: 'business',
+      }
+    : null
+
+  if (!profileDoc && !businessDoc) return null
+  if (!profileDoc) return businessDoc
+  if (!businessDoc) return profileDoc
+
+  if (
+    hasResubmittedDocuments.value
+    && (profileDoc.value || profileDoc.explicitUrl)
+    && (
+      profileDoc.value !== businessDoc.value
+      || profileDoc.explicitUrl !== businessDoc.explicitUrl
+    )
+  ) {
+    return profileDoc
+  }
+
+  const profileTime = documentTimestamp(profileDoc.updatedAt)
+  const businessTime = documentTimestamp(businessDoc.updatedAt)
+  if (profileTime !== businessTime) {
+    return profileTime >= businessTime ? profileDoc : businessDoc
+  }
+
+  if (profileDoc.explicitUrl && profileDoc.explicitUrl !== businessDoc.explicitUrl) {
+    return profileDoc
+  }
+
+  return profileDoc.value ? profileDoc : businessDoc
+}
+
 const isBusinessRegistration = computed(() => {
   const role = normalizeStatus(user.value?.role)
   const workspace = normalizeStatus(user.value?.workspace_type)
@@ -984,38 +1188,76 @@ const isBusinessRegistration = computed(() => {
 })
 
 const businessDocuments = computed(() => {
-  const business = businessRecord.value || {}
-  const fallback = user.value || {}
-  const preferUserDocs = hasResubmittedDocuments.value || Boolean(fallback.document_resubmitted_at)
+  const profile = user.value || {}
   const docs = [
     {
       key: 'bir_registration',
       label: 'BIR Registration',
-      value: (preferUserDocs ? fallback.bir_registration : business.bir_registration) || fallback.bir_registration || business.bir_registration,
     },
     {
       key: 'dti_registration',
       label: 'DTI Registration',
-      value: (preferUserDocs ? fallback.dti_registration : business.dti_registration) || fallback.dti_registration || business.dti_registration,
     },
     {
       key: 'mayor_permit',
       label: 'Mayor Permit',
-      value: (preferUserDocs ? fallback.mayor_permit : business.mayor_permit) || fallback.mayor_permit || business.mayor_permit,
     },
     {
       key: 'business_permit',
       label: 'Business Permit',
-      value: (preferUserDocs ? fallback.business_permit : business.business_permit) || fallback.business_permit || business.business_permit,
     },
     {
       key: 'sanitary_permit',
       label: 'Sanitary Permit',
-      value: (preferUserDocs ? fallback.sanitary_permit : business.sanitary_permit) || fallback.sanitary_permit || business.sanitary_permit,
     },
   ]
-  return docs.filter((doc) => Boolean(doc.value))
+  return docs
+    .map((doc) => {
+      const resolved = resolveLatestBusinessDocument(doc.key)
+      if (!resolved) return null
+
+      return {
+        ...doc,
+        value: resolved.value,
+        explicitUrl: resolved.explicitUrl,
+        updatedAt: resolved.updatedAt,
+        source: resolved.source,
+        imageUrl: safeImageUrl(resolved.value, resolved.explicitUrl, {
+          uid: profile.uid || profile.id,
+          field: doc.key,
+        }),
+      }
+    })
+    .filter(Boolean)
 })
+
+const warmUserImageAssets = (profile = {}) => {
+  const resolvedUid = String(profile?.uid || profile?.id || '').trim()
+  if (!resolvedUid) return
+
+  const candidates = []
+  const pushImageCandidates = (value, explicitUrl, field) => {
+    if (!isImageFile(value) && !isImageFile(explicitUrl)) return
+    candidates.push(...fileUrlCandidates(value, explicitUrl, {
+      uid: resolvedUid,
+      field,
+    }))
+  }
+
+  pushImageCandidates(profile?.profile_photo || profile?.profile_photo_path, profile?.profile_photo_url, 'profile_photo')
+  pushImageCandidates(profile?.government_id_resubmission, profile?.government_id_resubmission_url, 'government_id')
+  pushImageCandidates(profile?.government_id, profile?.government_id_url, 'government_id')
+
+  ;['bir_registration', 'dti_registration', 'mayor_permit', 'business_permit', 'sanitary_permit'].forEach((field) => {
+    pushImageCandidates(profile?.[field], profile?.[`${field}_url`], field)
+  })
+
+  warmImageUrls(candidates)
+}
+
+watch(user, (nextUser) => {
+  warmUserImageAssets(nextUser || {})
+}, { deep: false })
 
 const unsubscribeLiveUser = () => {
   if (typeof liveUserUnsubscribe.value === 'function') {
@@ -1048,7 +1290,7 @@ const subscribeLiveUser = (profileId, fallbackUser = null) => {
 
 function openUserModal(userId, initialUser = null) {
   unsubscribeLiveUser()
-  failedImageKeys.value = new Set()
+  resetImageResolutionState()
   previewState.value = {
     open: false,
     src: '',
@@ -1056,7 +1298,6 @@ function openUserModal(userId, initialUser = null) {
   }
   previewZoom.value = 1
   actingOnUser.value = false
-  showModal.value = true
   const fallbackUser = initialUser && typeof initialUser === 'object'
     ? mergeUserPayload({ ...initialUser })
     : null
@@ -1071,15 +1312,21 @@ function openUserModal(userId, initialUser = null) {
 
   if (fallbackUser) {
     user.value = fallbackUser
-    subscribeLiveUser(fallbackUser.uid || fallbackUser.id, fallbackUser)
+  } else {
+    user.value = {}
+  }
+
+  showModal.value = true
+
+  if (!resolvedProfileId) {
+    if (fallbackUser) {
+      subscribeLiveUser(fallbackUser.uid || fallbackUser.id, fallbackUser)
+    }
     loadingUser.value = false
     return
   }
 
-  user.value = {}
-  loadingUser.value = true
-
-  axios.get(`/admin/users/${resolvedProfileId}`)
+  const hydrateLatestUser = (silentFailure = false) => axios.get(`/admin/users/${resolvedProfileId}`)
     .then(res => {
       const payload = res.data?.user || res.data?.data || res.data || {}
       const resolvedId = payload.id || payload.uid || payload.firebase_uid || payload.email || fallbackUser?.id || fallbackUser?.uid || fallbackUser?.firebase_uid || fallbackUser?.email
@@ -1091,8 +1338,9 @@ function openUserModal(userId, initialUser = null) {
       subscribeLiveUser(user.value.uid || user.value.id || resolvedId, user.value)
     })
     .catch((error) => {
-      if (fallbackUser) {
+      if (fallbackUser && silentFailure) {
         console.warn('Failed to fetch the latest user details. Showing the selected table row instead.', error)
+        subscribeLiveUser(fallbackUser.uid || fallbackUser.id || resolvedProfileId, fallbackUser)
         return
       }
 
@@ -1100,17 +1348,30 @@ function openUserModal(userId, initialUser = null) {
       showModal.value = false
     })
     .finally(() => {
-      loadingUser.value = false
+      if (!fallbackUser) {
+        loadingUser.value = false
+      }
     })
+
+  if (fallbackUser) {
+    subscribeLiveUser(fallbackUser.uid || fallbackUser.id || resolvedProfileId, fallbackUser)
+    loadingUser.value = false
+    hydrateLatestUser(true)
+    return
+  }
+
+  loadingUser.value = true
+  hydrateLatestUser(false)
 }
 
 const closeModal = () => {
+  dismissActionProgressToast()
   unsubscribeLiveUser()
   showModal.value = false
   user.value = {}
   loadingUser.value = false
   actingOnUser.value = false
-  failedImageKeys.value = new Set()
+  resetImageResolutionState()
   closeImagePreview()
 }
 
@@ -1130,8 +1391,8 @@ const mapUrl = computed(() => {
 
 const canManageUser = computed(() => Boolean(user.value?.id) && !loadingUser.value && !actingOnUser.value)
 
-const openFilePreview = (value, label = 'Uploaded document', explicitUrl = '') => {
-  const src = docUrl(value, explicitUrl)
+const openFilePreview = (value, label = 'Uploaded document', explicitUrl = '', options = {}) => {
+  const src = docUrl(value, explicitUrl, options)
   if (!src) return
 
   if (!isImageFile(value)) {
@@ -1192,6 +1453,7 @@ const approveUser = async () => {
 
   try {
     actingOnUser.value = true
+    showActionProgressToast('approve')
     const res = await axios.post(`/admin/users/${user.value.id}/toggle-approval`, {}, { skipGlobalLoading: true })
     user.value = clearActiveResubmissionState(mergeUserPayload(res.data?.user || {
       ...user.value,
@@ -1204,11 +1466,12 @@ const approveUser = async () => {
     showProfessionalFeedbackToast(
       toast,
       'success',
-      'User approved',
       res.data?.message || 'User approved successfully.',
+      '',
       2800,
     )
   } catch (err) {
+    dismissActionProgressToast()
     showProfessionalFeedbackToast(
       toast,
       'error',
@@ -1227,63 +1490,20 @@ const rejectUser = async () => {
     return
   }
 
-  let modalElement = null
-  const result = await Swal.fire({
-    title: 'Why did you reject this user?',
-    html: `
-      <div class="text-left">
-        <p class="mb-3 text-lg text-white">Select all issues that apply, then add a short explanation for the user record if needed.</p>
-        <div data-reject-checklist class="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          ${REJECTION_OPTIONS.map((option) => `
-            <label class="flex items-start gap-3 rounded-md bg-white px-3 py-2 text-lg text-slate-700 shadow-sm">
-              <input type="checkbox" value="${option.value}" class="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-200" />
-              <span>${option.label}</span>
-            </label>
-          `).join('')}
-        </div>
-        <label for="reject-user-reason" class="mt-4 block text-lg font-semibold text-white">Additional reason (Optional)</label>
-        <textarea
-          id="reject-user-reason"
-          rows="4"
-          class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-lg text-slate-800 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100"
-          placeholder="Add a concise explanation for the rejection (optional)."
-        ></textarea>
-      </div>
-    `,
-    showCancelButton: true,
-    confirmButtonText: 'Reject',
-    didOpen: (popup) => {
-      modalElement = popup
-      const textarea = popup.querySelector('#reject-user-reason')
-      textarea?.focus()
-    },
-    preConfirm: () => {
-      const checklistInputs = [...(modalElement?.querySelectorAll('[data-reject-checklist] input[type="checkbox"]') || [])]
-      const selected = checklistInputs
-        .filter((input) => input.checked)
-        .map((input) => input.value)
-      const reason = String(modalElement?.querySelector('#reject-user-reason')?.value || '').trim()
-
-      if (!selected.length) {
-        Swal.showValidationMessage('Select at least one reason from the checklist.')
-        return false
-      }
-
-      return { checklist: selected, reason }
-    },
-  })
-  if (!result.isConfirmed) return
+  const result = await promptAdminAccountRejection(Swal)
+  if (!result) return
 
   try {
     actingOnUser.value = true
+    showActionProgressToast('reject')
     const res = await axios.post(`/admin/users/${user.value.id}/reject`, {
-      checklist: result.value.checklist,
-      reason: result.value.reason,
+      checklist: result.checklist,
+      reason: result.reason,
     }, { skipGlobalLoading: true })
     user.value = clearActiveResubmissionState(mergeUserPayload(res.data?.user || {
       ...user.value,
-      rejection_reason: result.value.reason,
-      rejection_checklist: result.value.checklist,
+      rejection_reason: result.reason,
+      rejection_checklist: result.checklist,
       is_approved: false,
       status: 'rejected',
       approval_status: 'rejected',
@@ -1293,11 +1513,12 @@ const rejectUser = async () => {
     showProfessionalFeedbackToast(
       toast,
       'success',
-      'User rejected',
-      res.data?.message || 'User rejected successfully.',
+      'User rejected successfully.',
+      '',
       2800,
     )
   } catch (err) {
+    dismissActionProgressToast()
     showProfessionalFeedbackToast(
       toast,
       'error',

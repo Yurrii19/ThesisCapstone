@@ -1437,7 +1437,7 @@ const submit = async ()=>{
     registrationSubmitState.value = 'success'
     registrationStatusText.value = 'Registration completed successfully. You can now sign in.'
     Swal.close()
-    Swal.fire('Registration Submitted', 'Your Firebase account was created successfully.', 'success')
+    Swal.fire('Registration Submitted', 'Account created successfully.', 'success')
     window.setTimeout(() => {
       navigateToLogin()
     }, 900)
